@@ -59,6 +59,7 @@ def _load_nodes():
     import tax_nodes.yangdo_teukrye  # noqa: F401
     import tax_nodes.setdae_jutaeksu  # noqa: F401
     import tax_nodes.yangdo_bunyang  # noqa: F401
+    import tax_nodes.yangdo_suyong  # noqa: F401
     from tax_nodes import 전체
     return 전체()
 

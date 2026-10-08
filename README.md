@@ -22,7 +22,7 @@
 | 1 값 | `data/tax_params.json`, `tax_params.py` | 세율표·비율·상한. 연도 필수. 검증된 연도만 돌려준다 |
 | 2 법문 코퍼스 | `data/legal_nodes/*.json` | 조문 원문·시행일·인용 키. 결과의 "근거" 필드가 여기를 가리킨다 |
 | 3 판정·계산 | `tax_judgment.py`, `tax_server.py`, `entity_tax.py` | 계산기·판정기 43종. 함수 하나에 조문 여러 개가 들어 있는 **레거시 구조** — 아래 실행 노드로 옮기는 중 |
-| 4 실행 노드 | `tax_nodes/` | **조·항·호 = 함수 하나.** 계산은 노드의 합성. 미적용 조문도 사유와 함께 기록. 현재 176개 (재산세·종부세) |
+| 4 실행 노드 | `tax_nodes/` | **조·항·호 = 함수 하나.** 계산은 노드의 합성. 미적용 조문도 사유와 함께 기록. 현재 184개 (재산세·종부세) |
 | 검증 | `data/verification/`, `tax_case_store.py` | 공식 해석례 1318건을 정답지로, 회귀 케이스 307건, 결함 기록 39건 |
 
 ## 설치·MCP 연결
@@ -72,4 +72,4 @@ GNU Affero General Public License v3.0 or later. 이 엔진을 고쳐 네트워�
 같은 조건으로 공개해야 한다. 닫힌 SaaS에 넣고 싶으면 별도 라이선스를 문의하라.
 
 ---
-생성: `scripts/package_opensource.py` (원본 git 5121896)
+생성: `scripts/package_opensource.py` (원본 git c1aaa6d)
