@@ -72,4 +72,4 @@ GNU Affero General Public License v3.0 or later. 이 엔진을 고쳐 네트워�
 같은 조건으로 공개해야 한다. 닫힌 SaaS에 넣고 싶으면 별도 라이선스를 문의하라.
 
 ---
-생성: `scripts/package_opensource.py` (원본 git c1aaa6d)
+생성: `scripts/package_opensource.py` (원본 git 67445c7)
