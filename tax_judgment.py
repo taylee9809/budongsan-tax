@@ -630,6 +630,17 @@ def judge_same_household(relationship: str, lives_together: bool = True,
                                    "지방세법 시행령 §28의3①·②1호", "A"))
             return {"동일세대": True, "분리가능": bool(income_over_40pct_median and not is_minor),
                     "근거": citations, "플래그": flags}
+        # 2026-10-09 교정 — 취득세 세대는 주민등록표 기준이라 배우자·미혼 30세 미만 자녀 외의 가족은 영 §152의3
+        # (소득세법)이 아니라 '같은 세대별 주민등록표 기재 여부'로 판정한다. 종전에는 아래 양도세 규칙으로 흘러
+        # 내려가 주민등록을 분리한 직계존속을 동일세대로 보는 등 세목이 섞였다(조문 노드 대조에서 발견).
+        if not lives_together:
+            citations.append(_cite("세대별 주민등록표에 함께 기재되지 않은 가족(배우자·미혼 30세 미만 자녀·부모 외) — 별도 세대",
+                                   "지방세법 시행령 §28의3①", "A"))
+            return {"동일세대": False, "분리가능": True, "근거": citations, "플래그": flags}
+        citations.append(_cite("같은 세대별 주민등록표에 기재된 가족 — 동일 세대. 주민등록표를 분리하면 별도 세대"
+                               "(배우자·미혼 30세 미만 자녀 외)", "지방세법 시행령 §28의3①", "A"))
+        return {"동일세대": True, "분리가능": not (merged_for_parent_care and relationship == "직계존속"),
+                "분리조건": "세대별 주민등록표 분리", "근거": citations, "플래그": flags}
 
     # 3) 동거 중인 가족의 세대분리 가능성 (영 §152의3)
     can_separate, why = False, None
