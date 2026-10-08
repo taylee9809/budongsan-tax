@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """korea-realestate 세금 판정·계산 MCP 서버 (공개판).
 
-이 파일은 scripts/extract_tax_server.py 가 server.py(비공개 통합 서버, git 0c73c09)에서
+이 파일은 scripts/extract_tax_server.py 가 server.py(비공개 통합 서버, git 792ddbc)에서
 세금 도구와 그 의존 정의만 AST로 뽑아 생성한 것이다. 손으로 고치지 말고 생성기를 다시 돌린다.
 도구 43개. 법령·재결례 조회 도구는 .env의 LAW_OC(법제처 Open API 키, 무료)가 있을 때만 동작한다.
 """
@@ -1552,12 +1552,17 @@ def calc_gift_tax(
     deduction = 공제표[relationship]
     if relationship == "직계존속" and is_minor_recipient:
         deduction = 공제표["직계존속.미성년수증자"]
-    marriage = min(marriage_birth_deduction,
-                   tax_params.get_param("증여세.혼인출산공제", year)["통합한도"])
+    # §53의2 혼인·출산 공제는 '직계존속으로부터' 받은 증여에만 있다 (2026-10-09 조문 노드 대조에서 교정 —
+    # 종전에는 배우자·기타 증여에도 공제가 들어갔다)
+    marriage = 0
+    if relationship == "직계존속":
+        marriage = min(marriage_birth_deduction,
+                       tax_params.get_param("증여세.혼인출산공제", year)["통합한도"])
     if filing_credit_rate < 0:
         filing_credit_rate = tax_params.get_param("상증세.신고세액공제율", year)
 
-    total_value = taxable_value + prior_gifts_10yr
+    # §47② — 10년 내 동일인 증여재산 합계가 1천만원 이상인 경우에만 가산 (같은 날 교정, 종전 무조건 합산)
+    total_value = taxable_value + (prior_gifts_10yr if prior_gifts_10yr >= 10_000_000 else 0)
     tax_base = max(0, total_value - deduction - marriage)
     gross, rate = _sangjeung_progressive(tax_base, year)
     surcharge = 0
