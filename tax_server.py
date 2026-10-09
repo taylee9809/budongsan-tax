@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """korea-realestate 세금 판정·계산 MCP 서버 (공개판).
 
-이 파일은 scripts/extract_tax_server.py 가 server.py(비공개 통합 서버, git 699423c)에서
+이 파일은 scripts/extract_tax_server.py 가 server.py(비공개 통합 서버, git 9f035d7)에서
 세금 도구와 그 의존 정의만 AST로 뽑아 생성한 것이다. 손으로 고치지 말고 생성기를 다시 돌린다.
 도구 43개. 법령·재결례 조회 도구는 .env의 LAW_OC(법제처 Open API 키, 무료)가 있을 때만 동작한다.
 """
@@ -27,11 +27,15 @@ LAW_SEARCH_URL = "http://www.law.go.kr/DRF/lawSearch.do"
 
 LAW_SERVICE_URL = "http://www.law.go.kr/DRF/lawService.do"
 
-mcp = FastMCP("budongsan-tax")
+SERVER_INSTRUCTIONS = 'Korean real estate tax engine. Computes and judges 취득세 (acquisition tax), 재산세 (property tax), 종합부동산세 (comprehensive holding tax), 양도소득세 (capital gains tax), 주택임대소득세 (rental income tax), 증여세·상속세 (gift/inheritance tax on real estate) and 재건축부담금 (reconstruction levy) under Korean law. Every result lists the statute articles applied, the articles considered but not applied (with reasons), and the provenance grade of each input. Use judge_* tools first to settle facts (household, home count, exemptions), then calc_* tools for amounts. Not tax advice; results are one reading of the statute.'
+
+mcp = FastMCP("budongsan-tax", instructions=SERVER_INSTRUCTIONS)
 
 @mcp.tool()
 async def search_law(query: str, target: str = "law", display: int = 20) -> dict:
-    """법제처 국가법령정보에서 법령 또는 행정규칙(고시)을 검색한다.
+    """Search Korean statutes and administrative rules on the national law database (law.go.kr). Needs LAW_OC key.
+
+    법제처 국가법령정보에서 법령 또는 행정규칙(고시)을 검색한다.
 
     Args:
         query: 검색할 법령명/고시명 또는 키워드
@@ -59,7 +63,9 @@ async def search_law(query: str, target: str = "law", display: int = 20) -> dict
 
 @mcp.tool()
 async def get_law_detail(doc_id: str, target: str = "law") -> dict:
-    """법령 조문 또는 행정규칙(고시) 원문 전체를 조회한다.
+    """Fetch the full text of a Korean statute by name or MST id, optionally one article. Needs LAW_OC key.
+
+    법령 조문 또는 행정규칙(고시) 원문 전체를 조회한다.
 
     Args:
         doc_id: search_law 결과의 "법령일련번호"(target="law") 또는
@@ -90,7 +96,9 @@ _ORDIN_TAX_LEVEL = {
 
 @mcp.tool()
 async def get_local_tax_ordinances(sido: str, keyword: str = "취득세") -> dict:
-    """관할 시·도 지방세 조례에서 취득세(또는 keyword) 관련 조문을 실시간 조회한다.
+    """Look up a Korean city/county tax ordinance (rate adjustments, local reliefs). Needs LAW_OC key.
+
+    관할 시·도 지방세 조례에서 취득세(또는 keyword) 관련 조문을 실시간 조회한다.
 
     지방세법 §14가 조례로 취득세 세율을 표준세율의 50% 범위에서 가감할 수 있게
     허용하므로(탄력세율) 세액 판정 전 관할 조례 확인이 필요하다. 재산세는
@@ -199,7 +207,9 @@ def calc_transfer_tax(
     surcharge_rate: float = -1.0,
     heavy_home_count: int = 0,
 ) -> dict:
-    """양도소득세를 계산한다. 세율·공제는 year로 상수표에서 읽는다.
+    """Korea capital gains tax (양도소득세) on real estate: rate, long-term holding deduction, heavy rates, surtax. Returns the statute trail.
+
+    양도소득세를 계산한다. 세율·공제는 year로 상수표에서 읽는다.
 
     ⚠️ 2026-08-30 변경 — year 필수. 세율표·기본공제·중과 가산세율을
     data/tax_params.json(1층)에서 읽고, **단기세율 비교과세(§104① 후단·§104⑦ 후단)를
@@ -351,7 +361,9 @@ def calc_acquisition_tax(
     local_education_tax_rate: float = -1.0,
     rural_special_tax_rate: float = -1.0,
 ) -> dict:
-    """취득세(+지방교육세+농어촌특별세)를 계산한다. 세율은 year로 상수표에서 읽는다.
+    """Korea acquisition tax (취득세) on real estate plus local education tax and rural special tax, by year and acquisition type.
+
+    취득세(+지방교육세+농어촌특별세)를 계산한다. 세율은 year로 상수표에서 읽는다.
 
     ⚠️ 2026-08-30 변경 — year 필수. 종전에는 세 세율을 전부 호출자가 계산해 넘겨야 했고,
     특히 부가세 두 개는 '취득세액×비율'이 아니라 **세율을 갈아끼워 다시 산출**하는 구조라
@@ -497,7 +509,9 @@ def calc_property_tax(
     local_education_tax_rate: float = -1.0,
     taxable_base_cap: int = 0,
 ) -> dict:
-    """재산세(주택분 중심)를 계산한다. 세율·비율은 year로 상수표에서 읽는다.
+    """Korea property tax (재산세) on housing: fair-market ratio, base cap, one-household special rate, urban area levy, education tax.
+
+    재산세(주택분 중심)를 계산한다. 세율·비율은 year로 상수표에서 읽는다.
 
     ⚠️ 2026-08-30 변경 — year가 필수가 됐고, 세율표·공정시장가액비율·도시지역분·
     지방교육세율은 data/tax_params.json(1층)에서 자동으로 읽는다. 그 연도가 검증되지
@@ -625,7 +639,9 @@ def calc_jongbu_tax(
     current_year_property_tax: int = 0,
     rural_special_tax_rate: float = -1.0,
 ) -> dict:
-    """종합부동산세(주택분)를 계산한다. 세율·공제·비율은 year로 상수표에서 읽는다.
+    """Korea comprehensive real estate holding tax (종합부동산세) on housing: deductions, progressive rates, property-tax credit, age/holding credits, burden cap.
+
+    종합부동산세(주택분)를 계산한다. 세율·공제·비율은 year로 상수표에서 읽는다.
 
     ⚠️ 2026-08-30 변경 — year 필수. prev_year_official_price를 주면 재산세액공제
     (영 §4의3)·당해 재산세액·직전연도 총세액상당액(영 §5②)까지 전부 코드가 계산한다.
@@ -838,7 +854,9 @@ def judge_acquisition_homes_and_rate(
     gift_std_value: int = 0,
     gift_from_one_home_household_to_family: bool = False,
 ) -> dict:
-    """취득세 주택수 산정 + 일시적 2주택 + 세율·부가세 실효율 판정
+    """Count homes for acquisition tax and decide the rate (1/8/12%), temporary two-home relief, corporate rules.
+
+    취득세 주택수 산정 + 일시적 2주택 + 세율·부가세 실효율 판정
     (지방세법 §13의2·§151, 영 §28의2~6, 농특세법 §5).
 
     homes: 취득 주택 포함 세대 보유 목록. 각 원소 {"종류": 주택|조합원입주권|주택분양권|
@@ -882,7 +900,9 @@ def judge_transfer_reliefs(
     deposit_received: bool = False,
     contract_months_limit: int = 4,
 ) -> dict:
-    """양도세 비과세·중과·장특공·고가주택 안분 판정 → calc_transfer_tax 인자 생성.
+    """Decide capital gains exemptions, heavy-rate exclusions, long-term deduction table and high-value apportionment, producing calc_transfer_tax inputs.
+
+    양도세 비과세·중과·장특공·고가주택 안분 판정 → calc_transfer_tax 인자 생성.
 
     소득세법 §89·§95(표1/표2·중과 시 장특공 배제)·§104⑦·영 §159의4·§160·한시배제(영
     §167의3①12호의2)를 한 번에 판정한다. 세대·주택수(트리①②)와 비과세 요건 충족 여부는
@@ -918,7 +938,9 @@ def judge_same_household(
     merged_for_parent_care: bool = False,
     descendant_age: int | None = None,
 ) -> dict:
-    """트리① — 본인과 특정인의 1세대 동일성 판정 (소법 §88 6호·영 §152의3 / 지방령 §28의3 / 종부령 §1의2).
+    """Decide whether two people form one household (1세대) for income, acquisition or holding tax purposes.
+
+    트리① — 본인과 특정인의 1세대 동일성 판정 (소법 §88 6호·영 §152의3 / 지방령 §28의3 / 종부령 §1의2).
 
     relationship: 배우자|직계존속|직계비속|직계존비속의 배우자|형제자매|기타(이모·조카 등 —
     가족 범위 밖은 세목 불문 별도 세대).
@@ -942,7 +964,9 @@ def judge_same_household(
 
 @mcp.tool()
 def count_transfer_homes(items: list[dict]) -> dict:
-    """트리② — 1세대1주택 비과세 판정용 주택수 산정 (소법 §88·영 §155 특례 제외 자동 적용).
+    """Count homes for the one-household-one-home capital gains exemption, applying statutory exclusions automatically.
+
+    트리② — 1세대1주택 비과세 판정용 주택수 산정 (소법 §88·영 §155 특례 제외 자동 적용).
 
     items 원소: {"종류": 주택|조합원입주권|분양권|오피스텔|다가구주택|겸용주택,
     "사실상주거용": bool, "취득일": "YYYY-MM-DD"(분양권 2021 이후만 산입),
@@ -971,7 +995,9 @@ def judge_temporary_two_homes(
     new_home_tenant_lease_end: str | None = None,
     new_contract_date: str | None = None,
 ) -> dict:
-    """§155① 일시적 2주택 판정 — 1년 경과(§154①1~3호 해당 시 면제)·양도기한·전입요건.
+    """Temporary two-home exemption test: one-year gap, disposal deadline, move-in requirement (Income Tax Decree art. 155(1)).
+
+    §155① 일시적 2주택 판정 — 1년 경과(§154①1~3호 해당 시 면제)·양도기한·전입요건.
 
     양도기한은 양도일로 갈린다: 2023.1.12 이후 양도=3년 단일, 2022.5.10~2023.1.11=조정→조정 2년,
     그 전=신규취득일 구간별 3년/2년/1년. 1년 구간(2019.12.17 이후 조정→조정 취득)은 신규주택
@@ -1010,7 +1036,9 @@ def judge_155_special(
     held_before_merge: bool = True,
     designated_by_agreement: bool = False,
 ) -> dict:
-    """영 §155 특례 판정 — kind: 혼인(⑤)|동거봉양(④)|상속주택(② 선순위·별도세대)|
+    """Special one-home cases: marriage, caring for parents, inherited home, rural home (Income Tax Decree art. 155).
+
+    영 §155 특례 판정 — kind: 혼인(⑤)|동거봉양(④)|상속주택(② 선순위·별도세대)|
     거주주택(⑳ 장기임대+거주 2년).
 
     특례기간은 **양도일 기준**으로 갈린다 — 혼인은 2024-11-12 이후 양도분 10년(그 전 5년,
@@ -1034,7 +1062,9 @@ def judge_155_special(
 
 @mcp.tool()
 def count_heavy_homes(items: list[dict], heavy_tier: int = 3) -> dict:
-    """양도세 중과판정 주택수 산정 (영 §167의3~11 불산입 자동 적용 — 지방 3억 이하·§167의3①12호).
+    """Count homes for heavy capital gains rates, excluding low-value provincial homes and other statutory exclusions.
+
+    양도세 중과판정 주택수 산정 (영 §167의3~11 불산입 자동 적용 — 지방 3억 이하·§167의3①12호).
 
     items 원소: {"종류": 주택|조합원입주권|분양권, "기준시가": 원(입주권=종전주택가·분양권=공급가),
     "지방소재": bool, "인구감소등_12호": bool, "정비구역": bool,
@@ -1051,14 +1081,18 @@ def count_heavy_homes(items: list[dict], heavy_tier: int = 3) -> dict:
 
 @mcp.tool()
 def judge_jongbu_one_home_status(other_homes: list[dict], base_date: str = "") -> dict:
-    """종부세 1세대1주택자 간주 4유형 판정 (법 §8④·영 §4의2 — 부속토지/일시적 3년/상속
+    """Comprehensive holding tax: is the owner deemed a one-household-one-home holder (attached land, temporary, inherited, cheap provincial home).
+
+    종부세 1세대1주택자 간주 4유형 판정 (법 §8④·영 §4의2 — 부속토지/일시적 3년/상속
     5년·지분40%·6억(3억)/지방저가 4억). 간주 인정 시 12억 공제·세액공제 입구, 과표 합산은
     유지·9/16~30 신청제 플래그 포함. base_date는 과세기준일(YYYY-MM-DD, 보통 매년 6/1)."""
     return _tj.judge_jongbu_one_home_status(other_homes, base_date)
 
 @mcp.tool()
 def judge_inherited_house_priority(houses: list[dict]) -> dict:
-    """피상속인 다주택 시 선순위 상속주택 1개 확정 (영 §155② 1~4호).
+    """When a decedent held several homes, pick the single inherited home that gets the special treatment.
+
+    피상속인 다주택 시 선순위 상속주택 1개 확정 (영 §155② 1~4호).
 
     상속주택이 2개 이상이면 순위규정에 따른 1주택만 비과세 특례 대상이다 —
     ①피상속인 소유기간 최장 ②동률 시 피상속인 거주기간 최장 ③소유·거주 모두 동률 시
@@ -1070,7 +1104,9 @@ def judge_inherited_house_priority(houses: list[dict]) -> dict:
 
 @mcp.tool()
 def judge_co_inherited_owner(shares: list[dict]) -> dict:
-    """공동상속주택의 소유자 귀속 판정 (영 §155③).
+    """Attribute a co-inherited home to one heir under Income Tax Decree art. 155(3).
+
+    공동상속주택의 소유자 귀속 판정 (영 §155③).
 
     원칙은 불산입(다른 주택 양도 시 그 거주자의 주택으로 보지 않음)이나 상속지분 최대자는
     산입하며, 최대자가 2명 이상이면 ①해당 주택 거주자 → ③최연장자 순(2호는 2008 삭제).
@@ -1083,7 +1119,9 @@ def judge_co_inherited_owner(shares: list[dict]) -> dict:
 def calc_attached_land_limit(building_footprint_m2: float, land_area_m2: float,
                              is_urban_area: bool = True, is_capital_region: bool = True,
                              urban_zone: str = "주거상업공업") -> dict:
-    """주택 부수토지의 1세대1주택 비과세 한도 면적 (소법 §89①3호·영 §154⑦).
+    """Maximum land area attached to a home covered by the capital gains exemption, by zone (3x/5x/10x).
+
+    주택 부수토지의 1세대1주택 비과세 한도 면적 (소법 §89①3호·영 §154⑦).
 
     비과세 범위 = 건물 정착면적(바닥면적) × 지역별 배율 — 도시지역 수도권 주거·상업·공업 3배 /
     수도권 녹지 5배 / 수도권 밖 5배, 비도시지역 10배. 초과분은 비과세에서 빠져 별도 과세되며
@@ -1107,7 +1145,9 @@ def judge_reconstruction_membership_transfer(
     is_partial_share_transfer: bool = False,
     is_one_plus_one_small: bool = False,
 ) -> dict:
-    """트리③ — 재건축·재개발 조합원 지위양도 제한 판정 (도시정비법 §39②③·영 §37①③).
+    """Can a redevelopment/reconstruction association membership be transferred in a speculation zone (Urban Renewal Act art. 39).
+
+    트리③ — 재건축·재개발 조합원 지위양도 제한 판정 (도시정비법 §39②③·영 §37①③).
 
     투기과열지구에서 재건축=조합설립인가 후/재개발=관리처분인가 후 양수자는 조합원 불가
     (증여 포함·상속·이혼 제외). 탈락 시 매수인은 §39③→§73 준용 손실보상 절차 대상 —
@@ -1142,7 +1182,9 @@ def judge_exemption_requirements(
     partial_non_residence_unavoidable: bool = False,
     sangsaeng_nonresident_contract: bool = False,
 ) -> dict:
-    """트리④ — 1세대1주택 비과세 요건 판정 (소법 §89①3호·영 §154·§155의3).
+    """Full one-household-one-home capital gains exemption test: holding, residence, price cap, adjusted area.
+
+    트리④ — 1세대1주택 비과세 요건 판정 (소법 §89①3호·영 §154·§155의3).
 
     트리①(세대)·트리②(주택수) 출력을 입력으로 받아 보유 2년·취득당시 조정 시 거주 2년·
     배제사유·상생임대 대체·고가주택 12억 안분 비율을 판정하고, 결과를
@@ -1181,7 +1223,9 @@ def judge_rental_income_tax(
     financial_income: int = 0,
     tax_reduction: int = 0,
 ) -> dict:
-    """트리⑤ — 주택임대 종합소득세 판정 (소법 §12·§14③7호·§25①·§64의2, 17차 순회 15노드).
+    """Residential rental income tax: taxable, home count, deemed rent, separate vs global taxation.
+
+    트리⑤ — 주택임대 종합소득세 판정 (소법 §12·§14③7호·§25①·§64의2, 17차 순회 15노드).
 
     비과세(1주택·12억 이하·국내) → 주택수(**부부합산**, 영 §8의2③4호 — 양도세 1세대·종부세 개인별과
     다른 제5의 기준) → 총수입금액(월세+간주임대료) → 2천만원 분기 → 분리과세 14% 계산 순으로 판정한다.
@@ -1203,7 +1247,9 @@ def calc_rental_income_tax(
     other_comprehensive_income: int | None = None,
     tax_reduction: int = 0,
 ) -> dict:
-    """분리과세 주택임대소득 세액 계산 (소법 §64의2①② · 영 §122의2⑦).
+    """Compute the 14% separate tax on residential rental income up to 20 million won, with registered-landlord deductions.
+
+    분리과세 주택임대소득 세액 계산 (소법 §64의2①② · 영 §122의2⑦).
 
     필요경비 50%(등록임대주택 60%), 추가공제 200만원(등록 400만원)은 **분리과세 주택임대소득을 제외한
     종합소득금액이 2천만원 이하일 때만** 적용된다 — other_comprehensive_income 미입력 시 공제 없이
@@ -1222,7 +1268,9 @@ def judge_business_dealer_status(
     is_self_built_sale: bool = False,
     is_residential_resale: bool = False,
 ) -> dict:
-    """사업자성 스크리닝 — 부동산매매업(사업소득)인지 양도소득인지 (트리⑥, P0 Q0 축).
+    """Is the seller a real estate dealer (business income) or an individual (capital gains).
+
+    사업자성 스크리닝 — 부동산매매업(사업소득)인지 양도소득인지 (트리⑥, P0 Q0 축).
 
     ⚠️소득세법에는 계속성·반복성의 임계값이 없다. 기계 판정 가능한 유일한 수치는
     부가가치세법 시행규칙 §2②2호의 **1과세기간(6개월) 중 1회 이상 취득 + 2회 이상 판매**로,
@@ -1241,7 +1289,9 @@ def calc_dealer_comparative_tax(
     housing_trade_profits: list[dict],
     tax_brackets: list[dict],
 ) -> dict:
-    """소법 §64 부동산매매업자 비교과세 — 사업자 전환으로 중과세율을 피할 수 있는지 계산.
+    """Comparative taxation for real estate dealers under Income Tax Act art. 64.
+
+    소법 §64 부동산매매업자 비교과세 — 사업자 전환으로 중과세율을 피할 수 있는지 계산.
 
     산출세액 = max(①종합소득 산출세액, ②주택등매매차익×§104 양도세율 + (종합소득과세표준 −
     주택등매매차익)×§55 기본세율). 대상 자산은 §104①1호(분양권)·8호·10호·§104⑦ = 중과 대상.
@@ -1266,7 +1316,9 @@ def estimate_reconstruction_levy(
     is_one_home_at_end: bool = False,
     age_at_end: int | None = None,
 ) -> dict:
-    """재건축부담금 추정 (재초환법 §7·8·10·12·14의2·17의2 — 22차 순회).
+    """Estimate the reconstruction excess-profit levy (재건축부담금): exemptions, base, rate bands, reductions.
+
+    재건축부담금 추정 (재초환법 §7·8·10·12·14의2·17의2 — 22차 순회).
 
     초과이익 = 종료시점 주택가액 − (개시시점 주택가액 + 정상주택가격상승분 + 개발비용).
     normal_rise_rate = max(국토부 고시 정기예금이자율, 시·군·구 평균주택가격상승률) — 외부 고시·
@@ -1290,7 +1342,9 @@ def judge_transfer_reduction_limit(
     contract_price_mismatch: bool = False,
     unregistered_transfer: bool = False,
 ) -> dict:
-    """양도세 감면 공통 게이트 — 조특법 §129 배제 → §133 종합한도 → §127⑦ 택일 (19차 순회).
+    """Capital gains relief gate: disqualification, annual and five-year relief caps, choose-one rules (Restriction of Special Taxation Act art. 129/133/127).
+
+    양도세 감면 공통 게이트 — 조특법 §129 배제 → §133 종합한도 → §127⑦ 택일 (19차 순회).
 
     reductions 각 원소: {"조문": "69"|"70"|"77"|"77의2"|..., "감면세액": int, "라벨": str}.
     한도는 두 바스켓으로 나뉘며 서로 잠식하지 않는다 — ①§33·43·66~69·69의2~4·70·85의10:
@@ -1316,7 +1370,9 @@ def judge_small_house_rental_reduction(
     income_tax_before_reduction: int = 0,
     rental_months: int | None = None,
 ) -> dict:
-    """조특법 §96 소형주택 임대사업자 세액감면 — 트리⑤ calc_rental_income_tax의 tax_reduction 산출.
+    """Small-home landlord income tax reduction (Special Taxation Act art. 96): eligibility and rate.
+
+    조특법 §96 소형주택 임대사업자 세액감면 — 트리⑤ calc_rental_income_tax의 tax_reduction 산출.
 
     감면율: 1호 임대 30%(공공지원·장기일반민간임대주택 75%) / 2호 이상 20%(장기일반등 50%).
     요건(영 §96): 소법 §168 사업자등록 + 민특법 §5 등록 + 국민주택규모 85㎡ 이하 +
@@ -1340,7 +1396,9 @@ def judge_farmland_reduction(
     transfer_date: str = "",
     estimated_tax: int = 0,
 ) -> dict:
-    """조특법 §69 자경농지 양도세 100% 감면 판정 (시행령 §66 요건 포함).
+    """Self-cultivated farmland capital gains exemption after 8 years (Special Taxation Act art. 69).
+
+    조특법 §69 자경농지 양도세 100% 감면 판정 (시행령 §66 요건 포함).
 
     ⚠️실질 관문은 8년이 아니라 소득 요건이다 — yearly_incomes([{"연도","사업소득금액","총급여액"}])의
     합계가 **3,700만원 이상인 과세기간은 경작기간에서 제외**된다(영 §66⑭, 농업·임업·부동산임대·
@@ -1365,7 +1423,9 @@ def judge_farmland_daeto(
     is_expropriation: bool = False,
     estimated_tax: int = 0,
 ) -> dict:
-    """조특법 §70 농지대토 양도세 100% 감면 판정 (시행령 §67 — 23차 순회).
+    """Farmland substitution exemption (Special Taxation Act art. 70): distance, period, area and value ratios.
+
+    조특법 §70 농지대토 양도세 100% 감면 판정 (시행령 §67 — 23차 순회).
 
     요건: ①종전 농지 양도일 현재 **4년 이상** 농지소재지(시군구·연접·직선 30km) 거주·경작
     ②양도일부터 1년(수용은 2년) 내 새 농지 취득 ③취득일부터 1년 내 새 농지소재지 거주·경작 개시
@@ -1395,7 +1455,9 @@ def judge_second_home_exclusion(
     first_contract: bool = True,
     seller_is_supplier: bool = True,
 ) -> dict:
-    """주택수 제외 특례 3형제 — 조특법 §99의4(농어촌·고향주택) / §71의2(인구감소지역) / §98의9(준공후미분양).
+    """Homes excluded from the home count: rural/hometown house, depopulation-area house, unsold completed house.
+
+    주택수 제외 특례 3형제 — 조특법 §99의4(농어촌·고향주택) / §71의2(인구감소지역) / §98의9(준공후미분양).
 
     kind: "농어촌주택"|"고향주택"|"인구감소지역주택"|"인구감소관심지역주택"|"준공후미분양주택".
     준공후미분양주택(§98의9·영 §98의8): 취득 2024-01-10~**2026-12-31 일몰**, 수도권 밖 소재,
@@ -1426,7 +1488,9 @@ def judge_first_home_acquisition_relief(
     acquired_date: str = "",
     co_owners: int = 1,
 ) -> dict:
-    """지특법 §36의3 생애최초 주택 구입 취득세 감면 (2028-12-31까지).
+    """First-time home buyer acquisition tax relief (Local Tax Special Act art. 36-3).
+
+    지특법 §36의3 생애최초 주택 구입 취득세 감면 (2028-12-31까지).
 
     본인·배우자 무주택 + 취득당시가액 12억 이하 유상거래(부담부증여 제외) + 본인 거주 목적,
     미성년자 제외. 감면 한도는 **300만원**(전용 60㎡ 이하 공동주택—아파트 제외·도시형생활주택·
@@ -1440,7 +1504,9 @@ def judge_first_home_acquisition_relief(
 
 @mcp.tool()
 def judge_family_loan(loan_amount: int, agreed_interest_rate: float = 0.0) -> dict:
-    """가족 간 차용·무상대출 증여 스크리닝 (상증법 §41의4 — 적정이자율 4.6%·기준 1천만).
+    """Family loan vs gift screening: 4.6% benchmark rate and the 10 million won threshold (Inheritance and Gift Tax Act art. 41-4).
+
+    가족 간 차용·무상대출 증여 스크리닝 (상증법 §41의4 — 적정이자율 4.6%·기준 1천만).
 
     연간 증여이익 = 대출금×4.6% − 실제 이자. 1천만 미만이면 과세 제외(무상 기준 약 2.17억).
     차용증·이자 실지급은 취득자금 증여추정(§45) 방어와 세트라는 플래그를 함께 반환.
@@ -1455,7 +1521,9 @@ def judge_fund_plan_requirement(
     in_permit_zone: bool = False,
     is_corporation: bool = False,
 ) -> dict:
-    """주택 매수 자금조달계획서 제출·증빙 판정 (거래신고령 별표 1 — 법인 전부 / 6억↑ /
+    """Whether a home purchase must file a funding plan and supporting documents.
+
+    주택 매수 자금조달계획서 제출·증빙 판정 (거래신고령 별표 1 — 법인 전부 / 6억↑ /
     규제지역 소재, 투기과열지구·허가구역은 증빙 첨부). 현행 서식(별지 1호의3) 항목 안내 포함."""
     return _tj.judge_fund_plan_requirement(
         actual_price, in_speculation_zone, in_adjusted_area, in_permit_zone, is_corporation
@@ -1470,7 +1538,9 @@ def format_consultation_report(
     dividing_issue: str = "",
     issue_grade: str = "",
 ) -> dict:
-    """소비자용 상담 리포트 최종 양식 — 1.최종결론 / 2.근거(설명↔출처 1:1) / 3.맞춤 Q&A.
+    """Format a consultation result as a report: conclusion, grounds mapped to sources, tailored Q&A.
+
+    소비자용 상담 리포트 최종 양식 — 1.최종결론 / 2.근거(설명↔출처 1:1) / 3.맞춤 Q&A.
 
     상담의 마지막 단계. 소비자는 결론만 원하므로 결론을 맨 위에, 근거는 설명과 출처를
     1:1로 매칭(출처 없는 설명은 리포트 전체 거부), 소유자가 물었던 추가 질문들은 §3에
@@ -1481,7 +1551,9 @@ def format_consultation_report(
 
 @mcp.tool()
 def judge_adjusted_area_at_date(region: str, target_date: str) -> dict:
-    """'취득 당시' 조정대상지역 여부 판정 (트리④ B2 — data/adj_regions_history.json 이력 lookup).
+    """Was a location an adjusted (regulated) area on a given date, from the designation history.
+
+    '취득 당시' 조정대상지역 여부 판정 (트리④ B2 — data/adj_regions_history.json 이력 lookup).
 
     region 예: "서울 마포구"·"성남시 분당구". target_date: 취득일 YYYY-MM-DD(분양권·입주권
     승계취득은 사용승인일 기준). 이력은 근거 확보 구간만 수록(2025-10-16 C급·2026-07-01 A급) —
@@ -1497,7 +1569,9 @@ def format_consultation_output(
     lead_threshold: int = 5_000_000,
     extra_flags: list[dict] | None = None,
 ) -> dict:
-    """상담 결과 표준 출력 포맷터 (설계 §11 출력규약의 코드화) — 파이프라인의 마지막 단계.
+    """Standard output formatter for a consultation result.
+
+    상담 결과 표준 출력 포맷터 (설계 §11 출력규약의 코드화) — 파이프라인의 마지막 단계.
 
     규약을 강제한다: ①단일 숫자 금지 — 쟁점 등급이 D~F(해석·사실판단)면 시나리오 2개 이상
     병기 필수(성립/불성립 양쪽 세액) ②차액 = 리드 스코어(하<500만<중<3천만<상<1억<최상) —
@@ -1531,7 +1605,9 @@ def calc_gift_tax(
     over_2b_minor_skip: bool = False,
     filing_credit_rate: float = -1.0,
 ) -> dict:
-    """증여세를 계산한다 (상증세법 §53·§55·§56·§57 — 12차 순회까지 법문 확정 상수 사용).
+    """Korea gift tax (증여세) on real estate: relationship deductions, marriage/birth deduction, prior gifts, progressive rates.
+
+    증여세를 계산한다 (상증세법 §53·§55·§56·§57 — 12차 순회까지 법문 확정 상수 사용).
 
     taxable_value: 증여재산 과세가액(시가 평가·부담부증여 채무 차감 후 — 평가는 별도.
     아파트 시가는 유사매매사례 요건(상증규칙 §15③: 같은 단지+면적±5%+공시가±5%)으로 판정).
@@ -1609,7 +1685,9 @@ def calc_inheritance_tax(
     over_2b_minor_skip: bool = False,
     filing_credit_rate: float = -1.0,
 ) -> dict:
-    """상속세를 계산한다 (상증세법 §18~§26 — 9·11차 순회 법문 확정 상수 사용, 유산세 방식).
+    """Korea inheritance tax (상속세): basic, spouse and lump-sum deductions, progressive rates (estate basis).
+
+    상속세를 계산한다 (상증세법 §18~§26 — 9·11차 순회 법문 확정 상수 사용, 유산세 방식).
 
     taxable_value: 상속세 과세가액(상속재산 + 사전증여 합산 − 공과금·채무·장례비 차감 후).
     배우자공제(§19): min(실제 상속받은 금액, 법정지분 한도, 30억)이되 최소 5억 —
@@ -1669,7 +1747,9 @@ def calc_inheritance_tax(
 
 @mcp.tool()
 async def search_tax_rulings(query: str, source: str = "국세청해석", display: int = 10) -> dict:
-    """세무 해석례·심판례를 검색한다 — 판정 쟁점플래그의 D·E급 근거 탐색용 (법제처 공동활용).
+    """Search official Korean tax rulings and tribunal decisions used as regression answers.
+
+    세무 해석례·심판례를 검색한다 — 판정 쟁점플래그의 D·E급 근거 탐색용 (법제처 공동활용).
 
     source: "국세청해석"(ntsCgmExpc, 17,534건 — 예규 회신, 요건 판정의 1순위 원료) |
     "조세심판원"(ttSpecialDecc, 12,109건 — 재결례, 경정청구·가액 다툼 중심) |
@@ -1718,7 +1798,9 @@ def judge_156_3_special(
     excluded_homes: int = 0,
     bunyang_already_completed: bool = False,
 ) -> dict:
-    """주택+분양권 1세대1주택 특례 판정 (영 §156의3, 규칙 §75·§75의2 — 24차 순회).
+    """Home plus pre-sale right (분양권) one-home special case (Income Tax Decree art. 156-3).
+
+    주택+분양권 1세대1주택 특례 판정 (영 §156의3, 규칙 §75·§75의2 — 24차 순회).
 
     입주권은 judge_155_special·§156의2 계열이 맡고, 이 툴은 **분양권** 전용이다.
     **판정범위는 ②③항(일시적 1주택+1분양권)뿐이다** — 상속분양권(④⑤)·동거봉양/혼인
@@ -1776,7 +1858,9 @@ def screen_relief_candidates(
     include_corporate: bool = False,
     limit: int = 12,
 ) -> dict:
-    """조특법·지특법 감면/특례 중 이 상담에서 검토해야 할 조문을 뽑는다 (누락 방지용).
+    """List the tax reliefs and special cases worth checking for a given situation, to avoid omissions.
+
+    조특법·지특법 감면/특례 중 이 상담에서 검토해야 할 조문을 뽑는다 (누락 방지용).
 
     **판정이 아니다.** judge_*/calc_*는 A등급 법문 노드로 결론을 내지만 이 툴은
     C등급 기계추출 색인이라 "여기를 봐라"까지만 한다. 감면 누락은 고객이 세금을 더
@@ -1816,7 +1900,9 @@ def judge_156_3_from_portfolio(
     sold_by_that_method: bool = False,
     partial_move_reason: str = "",
 ) -> dict:
-    """보유 목록만 넣으면 §156의3 특례를 판정한다 — 주택수를 코드가 센다.
+    """Same as judge_156_3_special, but counts homes from a holdings list.
+
+    보유 목록만 넣으면 §156의3 특례를 판정한다 — 주택수를 코드가 센다.
 
     judge_156_3_special을 직접 쓰면 other_homes·excluded_homes를 사람이 채워야 하고,
     빠뜨리면 조용히 '1주택+1분양권'으로 가정하고 답한다. **상담에서는 이 툴을 먼저
@@ -1856,7 +1942,9 @@ def judge_156_3_from_portfolio(
 
 @mcp.tool()
 def get_relief_catalog_entry(article: str) -> dict:
-    """감면 카탈로그 한 건 조회 — "지특법 §36의5", "조특97의3" 같은 표기를 받는다.
+    """Look up one relief catalog entry by statute reference.
+
+    감면 카탈로그 한 건 조회 — "지특법 §36의5", "조특97의3" 같은 표기를 받는다.
 
     screen_relief_candidates가 뽑아 준 후보의 원문 요지·감면율·기한을 다시 볼 때 쓴다.
     여기 값도 C등급 기계추출이므로 확정 근거로 인용하면 안 된다.
@@ -1868,5 +1956,10 @@ def get_relief_catalog_entry(article: str) -> dict:
     return dict(e, 주의=_rc.DISCLAIMER)
 
 
-if __name__ == "__main__":
+def main() -> None:
+    """콘솔 진입점(pyproject [project.scripts]) — stdio MCP 서버."""
     mcp.run()
+
+
+if __name__ == "__main__":
+    main()

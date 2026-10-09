@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "budongsan-tax"
+version = "0.1.0"
+description = "Korean real-estate tax engine and MCP server: statute nodes, official rulings as tests"
+readme = "README.md"
+license = "AGPL-3.0-or-later"
+requires-python = ">=3.10"
+keywords = ["mcp", "mcp-server", "model-context-protocol", "korea", "tax", "real-estate", "양도소득세", "취득세", "종합부동산세"]
+dependencies = ["mcp>=1.2.0", "httpx>=0.27.0", "python-dotenv>=1.0.0", "xmltodict>=0.13.0", "pydantic>=2.0,<3"]
+
+[project.urls]
+Homepage = "https://github.com/taylee9809/budongsan-tax"
+Repository = "https://github.com/taylee9809/budongsan-tax"
+
+[project.scripts]
+budongsan-tax = "tax_server:main"
+
+[tool.setuptools]
+py-modules = ["tax_server", "tax_judgment", "tax_params", "entity_tax", "relief_catalog", "http_redact", "tax_case_store"]
+packages = ["tax_nodes"]
+# data/ 는 아직 패키지 데이터로 묶지 않았다. PyPI 첫 배포 전에 tax_params.py의 data 경로를 패키지 리소스로 바꿔야 한다.
