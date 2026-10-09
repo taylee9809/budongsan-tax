@@ -1,0 +1,65 @@
+# budongsan-tax
+
+> Korean real-estate tax engine and MCP server (stdio). 43 tools, 350 statute nodes, official rulings as regression tests. Every result lists the statute articles applied and not applied. Not tax advice.
+
+Repository: https://github.com/taylee9809/budongsan-tax
+MCP registry name: io.github.taylee9809/budongsan-tax
+License: AGPL-3.0-or-later
+
+## Tools
+
+- search_law: Search Korean statutes and administrative rules on the national law database (law.go.kr). Needs LAW_OC key.
+- get_law_detail: Fetch the full text of a Korean statute by name or MST id, optionally one article. Needs LAW_OC key.
+- get_local_tax_ordinances: Look up a Korean city/county tax ordinance (rate adjustments, local reliefs). Needs LAW_OC key.
+- search_tax_rulings: Search official Korean tax rulings and tribunal decisions used as regression answers.
+- calc_transfer_tax: Korea capital gains tax (양도소득세) on real estate: rate, long-term holding deduction, heavy rates, surtax. Returns the statute trail.
+- calc_acquisition_tax: Korea acquisition tax (취득세) on real estate plus local education tax and rural special tax, by year and acquisition type.
+- calc_property_tax: Korea property tax (재산세) on housing: fair-market ratio, base cap, one-household special rate, urban area levy, education tax.
+- calc_jongbu_tax: Korea comprehensive real estate holding tax (종합부동산세) on housing: deductions, progressive rates, property-tax credit, age/holding credits, burden cap.
+- calc_rental_income_tax: Compute the 14% separate tax on residential rental income up to 20 million won, with registered-landlord deductions.
+- calc_dealer_comparative_tax: Comparative taxation for real estate dealers under Income Tax Act art. 64.
+- calc_attached_land_limit: Maximum land area attached to a home covered by the capital gains exemption, by zone (3x/5x/10x).
+- calc_gift_tax: Korea gift tax (증여세) on real estate: relationship deductions, marriage/birth deduction, prior gifts, progressive rates.
+- calc_inheritance_tax: Korea inheritance tax (상속세): basic, spouse and lump-sum deductions, progressive rates (estate basis).
+- estimate_reconstruction_levy: Estimate the reconstruction excess-profit levy (재건축부담금): exemptions, base, rate bands, reductions.
+- judge_acquisition_homes_and_rate: Count homes for acquisition tax and decide the rate (1/8/12%), temporary two-home relief, corporate rules.
+- judge_transfer_reliefs: Decide capital gains exemptions, heavy-rate exclusions, long-term deduction table and high-value apportionment, producing calc_transfer_tax inputs.
+- judge_same_household: Decide whether two people form one household (1세대) for income, acquisition or holding tax purposes.
+- count_transfer_homes: Count homes for the one-household-one-home capital gains exemption, applying statutory exclusions automatically.
+- judge_temporary_two_homes: Temporary two-home exemption test: one-year gap, disposal deadline, move-in requirement (Income Tax Decree art. 155(1)).
+- judge_155_special: Special one-home cases: marriage, caring for parents, inherited home, rural home (Income Tax Decree art. 155).
+- count_heavy_homes: Count homes for heavy capital gains rates, excluding low-value provincial homes and other statutory exclusions.
+- judge_jongbu_one_home_status: Comprehensive holding tax: is the owner deemed a one-household-one-home holder (attached land, temporary, inherited, cheap provincial home).
+- judge_inherited_house_priority: When a decedent held several homes, pick the single inherited home that gets the special treatment.
+- judge_co_inherited_owner: Attribute a co-inherited home to one heir under Income Tax Decree art. 155(3).
+- judge_reconstruction_membership_transfer: Can a redevelopment/reconstruction association membership be transferred in a speculation zone (Urban Renewal Act art. 39).
+- judge_exemption_requirements: Full one-household-one-home capital gains exemption test: holding, residence, price cap, adjusted area.
+- judge_rental_income_tax: Residential rental income tax: taxable, home count, deemed rent, separate vs global taxation.
+- judge_business_dealer_status: Is the seller a real estate dealer (business income) or an individual (capital gains).
+- judge_transfer_reduction_limit: Capital gains relief gate: disqualification, annual and five-year relief caps, choose-one rules (Restriction of Special Taxation Act art. 129/133/127).
+- judge_small_house_rental_reduction: Small-home landlord income tax reduction (Special Taxation Act art. 96): eligibility and rate.
+- judge_farmland_reduction: Self-cultivated farmland capital gains exemption after 8 years (Special Taxation Act art. 69).
+- judge_farmland_daeto: Farmland substitution exemption (Special Taxation Act art. 70): distance, period, area and value ratios.
+- judge_second_home_exclusion: Homes excluded from the home count: rural/hometown house, depopulation-area house, unsold completed house.
+- judge_first_home_acquisition_relief: First-time home buyer acquisition tax relief (Local Tax Special Act art. 36-3).
+- judge_family_loan: Family loan vs gift screening: 4.6% benchmark rate and the 10 million won threshold (Inheritance and Gift Tax Act art. 41-4).
+- judge_fund_plan_requirement: Whether a home purchase must file a funding plan and supporting documents.
+- judge_adjusted_area_at_date: Was a location an adjusted (regulated) area on a given date, from the designation history.
+- judge_156_3_special: Home plus pre-sale right (분양권) one-home special case (Income Tax Decree art. 156-3).
+- judge_156_3_from_portfolio: Same as judge_156_3_special, but counts homes from a holdings list.
+- screen_relief_candidates: List the tax reliefs and special cases worth checking for a given situation, to avoid omissions.
+- get_relief_catalog_entry: Look up one relief catalog entry by statute reference.
+- format_consultation_report: Format a consultation result as a report: conclusion, grounds mapped to sources, tailored Q&A.
+- format_consultation_output: Standard output formatter for a consultation result.
+
+## How to use
+
+- Call judge_* tools first to settle facts (household, home count, exemption eligibility), then calc_* for amounts.
+- Amount tools take `year`; rates are read from a verified parameter table. Unverified years are refused.
+- search_law / get_law_detail / search_tax_rulings / get_local_tax_ordinances need the LAW_OC env var (free key from law.go.kr).
+
+## Docs
+
+- [README](https://github.com/taylee9809/budongsan-tax/blob/main/README.md)
+- [Node coverage by article](https://github.com/taylee9809/budongsan-tax/blob/main/docs/NODE_COVERAGE.md)
+- [Contributing](https://github.com/taylee9809/budongsan-tax/blob/main/CONTRIBUTING.md)
