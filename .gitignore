@@ -8,3 +8,5 @@ data/tax_cases.db
 data/rulings/
 data/law_cache/
 logs/
+dist/
+*.egg-info/
