@@ -462,8 +462,9 @@ def 비과세판정_주택수(보유목록: list[dict]) -> dict:
 
 def 중과판정_주택수(보유목록: list[dict], 중과계열: int = 3) -> dict:
     from tax_nodes.engine import 실행
+    import tax_nodes.yangdo_jungkwa  # noqa: F401 — §167의4②·§167의11② 계열별 준용 노드
     ctx = 실행({"보유목록": 보유목록, "중과계열": 중과계열}, 2026, 세목="세대주택수")
-    제외 = set(ctx.값("중과불산입_12호")) | set(ctx.값("중과불산입_지방3억")) | set(ctx.값("중과불산입_1억", []) or [])
+    제외 = set(ctx.값("중과불산입_167의4" if 중과계열 == 3 else "중과불산입_167의11")) | set(ctx.값("중과불산입_1억", []) or [])
     라벨들 = [it.get("라벨") or it.get("종류", "주택") for it in 보유목록]
     n = len([l for l in 라벨들 if l not in 제외])
     return {"중과판정_주택수": n, "불산입": sorted(제외), "중과계열": 중과계열,
