@@ -1876,11 +1876,21 @@ def _조번호(표기: str) -> str:
     return m.group(1) if m else ""
 
 
-def _감면세액(c: dict, 산출: int, 규칙: dict, 인하, 세목: str) -> int:
+def _감면세액(c: dict, 산출: int, 규칙: dict, 인하, 세목: str, 과세표준=None, 표준세율=None) -> int:
     c["최소납부적용"] = False
     c["조례인하적용"] = False
     if c.get("정액공제") is not None:
         return min(산출, int(c["정액공제"]))
+    if c.get("대체세율") is not None:
+        if 과세표준:
+            c["적용감면율"] = None
+            return max(0, 산출 - int(gaek(과세표준) * float(c["대체세율"])))
+        if 표준세율:
+            율 = max(0.0, 1 - float(c["대체세율"]) / float(표준세율))
+            c["적용감면율"] = round(율, 6)
+            return int(산출 * 율)
+        c["감면세액_비고"] = "대체세율형 — 과세표준 또는 표준세율 필요"
+        return 0
     율 = float(c["감면율"] or 0.0)
     조 = _조번호(c["조문"])
     if 인하 and c.get("조례인하가능", True) and 조 not in 인하["제외조"]:
@@ -1909,7 +1919,9 @@ def 법180(ctx):
         산출 = ctx.값("산출세액")
     산출 = gaek(산출)
     후보 = []
-    for 이름 in (_취득세후보 if ctx.세목 == "취득세" else _재산세후보):
+    from tax_nodes.engine import _산출표
+    접두 = "감면_" if ctx.세목 == "취득세" else "재산세감면_"
+    for 이름 in sorted(n for n in _산출표 if n.startswith(접두)):
         c = ctx.값(이름, None)
         if c:
             후보.append(dict(c))
@@ -1921,7 +1933,7 @@ def 법180(ctx):
     규칙 = ctx.값("최소납부_규칙")
     인하 = ctx.값("조례인하율_적용", None)
     for c in 후보:
-        c["감면세액"] = _감면세액(c, 산출, 규칙, 인하, ctx.세목)
+        c["감면세액"] = _감면세액(c, 산출, 규칙, 인하, ctx.세목, ctx.사실값("과세표준"), ctx.사실값("표준세율"))
     일반 = [c for c in 후보 if not c.get("병행")]
     병행 = [c for c in 후보 if c.get("병행")]
     선택 = []
