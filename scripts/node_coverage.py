@@ -69,6 +69,8 @@ def _load_nodes():
     import tax_nodes.chwideuk_gwase  # noqa: F401
     import tax_nodes.jiteuk_chwideuk  # noqa: F401
     import tax_nodes.jiteuk_entity  # noqa: F401
+    import tax_nodes.yangdo_sodeuk_rest  # noqa: F401
+    import tax_nodes.yangdo_jotuk_rest  # noqa: F401
     from tax_nodes import 전체
     return 전체()
 

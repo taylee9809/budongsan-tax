@@ -47,10 +47,11 @@ Each row compares the statute-node engine against the legacy calculator/judge (o
 | 취득세 과세표준·세율특례·중과범위 | 조문표 | 취득세 과세표준·특례·중과 | 57 | 0 |  |
 | 지방세특례제한법 취득세·재산세 감면 | 조문표 | 지방세특례제한법 감면 | 154 | 0 |  |
 | 지방세특례제한법 사업자·단체 감면 | 조문표 | 지방세특례제한법 사업자·단체 감면 | 285 | 0 |  |
+| 양도세 잔여(소득세법 계산순서·국외자산·국외전출·조특법 미분양·신축·임대·이전 특례) | 조문표 | 양도세 잔여 — 계산순서·국외자산·국외전출·조특법 특례 | 118 | 0 |  |
 | 재산세 토지구분·비사업용 토지·중과 제외·조특법 잔여 | 조문표 / count_heavy_homes / judge_second_home_exclusion | 중과 제외·HH 회귀 | 7 | 0 |  |
 | 재산세 토지구분·비사업용 토지·중과 제외·조특법 잔여 | 조문표 / count_heavy_homes / judge_second_home_exclusion | 조특법 잔여·RH 회귀 | 8 | 0 |  |
 
-합계 / total: **8,787건, 불일치 0**
+합계 / total: **8,905건, 불일치 0**
 
 ## 읽는 법 / how to read
 
