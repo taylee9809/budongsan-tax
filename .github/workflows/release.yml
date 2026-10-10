@@ -1,0 +1,59 @@
+# 태그 v*를 푸시하면 ① 빌드 → ② PyPI(트러스티드 퍼블리싱, 토큰 없음) → ③ MCP 공식 레지스트리(GitHub OIDC, 토큰 없음) 순으로 올린다.
+# 전제: pypi.org에서 이 저장소를 trusted publisher로 한 번 등록(project budongsan-tax, owner taylee9809, repo budongsan-tax,
+# workflow release.yml, environment pypi). 레지스트리는 PyPI README의 "mcp-name:" 줄로 소유를 확인한다.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install build
+      - run: python -m build
+      - run: pip install dist/*.whl && python -c "import budongsan_tax.tax_server as s, asyncio; print(len(asyncio.run(s.mcp.list_tools())), 'tools')"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  pypi:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true
+
+  registry:
+    needs: pypi
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Wait for PyPI to index the release
+        run: sleep 60
+      - name: Install mcp-publisher
+        run: |
+          curl -sSL "https://github.com/modelcontextprotocol/registry/releases/download/v1.8.1/mcp-publisher_linux_amd64.tar.gz" | tar xz mcp-publisher
+          ./mcp-publisher --version
+      - name: Publish to the MCP registry
+        run: |
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish
