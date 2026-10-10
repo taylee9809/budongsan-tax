@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """korea-realestate 세금 판정·계산 MCP 서버 (공개판).
 
-이 파일은 scripts/extract_tax_server.py 가 server.py(비공개 통합 서버, git ee360cf)에서
+이 파일은 scripts/extract_tax_server.py 가 server.py(비공개 통합 서버, git 4f58fe0)에서
 세금 도구와 그 의존 정의만 AST로 뽑아 생성한 것이다. 손으로 고치지 말고 생성기를 다시 돌린다.
 도구 43개. 법령·재결례 조회 도구는 .env의 LAW_OC(법제처 Open API 키, 무료)가 있을 때만 동작한다.
 """
@@ -12,6 +12,7 @@ import httpx
 from dotenv import load_dotenv
 
 from mcp.server.fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 
 import tax_params
 
@@ -31,7 +32,7 @@ SERVER_INSTRUCTIONS = 'Korean real estate tax engine. Computes and judges 취득
 
 mcp = FastMCP("budongsan-tax", instructions=SERVER_INSTRUCTIONS)
 
-@mcp.tool()
+@mcp.tool(title='Search Korean statutes', annotations=ToolAnnotations(title='Search Korean statutes', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True))
 async def search_law(query: str, target: str = "law", display: int = 20) -> dict:
     """Search Korean statutes and administrative rules on the national law database (law.go.kr). Needs LAW_OC key.
 
@@ -61,7 +62,7 @@ async def search_law(query: str, target: str = "law", display: int = 20) -> dict
         resp.raise_for_status()
         return resp.json()
 
-@mcp.tool()
+@mcp.tool(title='Read a Korean statute', annotations=ToolAnnotations(title='Read a Korean statute', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True))
 async def get_law_detail(doc_id: str, target: str = "law") -> dict:
     """Fetch the full text of a Korean statute by name or MST id, optionally one article. Needs LAW_OC key.
 
@@ -94,7 +95,7 @@ _ORDIN_TAX_LEVEL = {
     "특별자치도": "도세", "도": "도세",
 }
 
-@mcp.tool()
+@mcp.tool(title='Local tax ordinance lookup', annotations=ToolAnnotations(title='Local tax ordinance lookup', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True))
 async def get_local_tax_ordinances(sido: str, keyword: str = "취득세") -> dict:
     """Look up a Korean city/county tax ordinance (rate adjustments, local reliefs). Needs LAW_OC key.
 
@@ -193,7 +194,7 @@ async def get_local_tax_ordinances(sido: str, keyword: str = "취득세") -> dic
         "법적근거": "지방세법 §14(취득세 ±50% 조례 가감)·§111③(재산세, 해당 연도 한정)",
     }
 
-@mcp.tool()
+@mcp.tool(title='Capital gains tax (양도소득세)', annotations=ToolAnnotations(title='Capital gains tax (양도소득세)', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def calc_transfer_tax(
     purchase_price: int,
     sale_price: int,
@@ -348,7 +349,7 @@ def calc_transfer_tax(
         "값 출처": src,
     }
 
-@mcp.tool()
+@mcp.tool(title='Acquisition tax (취득세)', annotations=ToolAnnotations(title='Acquisition tax (취득세)', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def calc_acquisition_tax(
     acquisition_price: int,
     year: int,
@@ -497,7 +498,7 @@ def _apply_brackets(taxable_base: int, tax_brackets: list[dict]) -> tuple[float,
             break
     return rate, deduction
 
-@mcp.tool()
+@mcp.tool(title='Property tax (재산세)', annotations=ToolAnnotations(title='Property tax (재산세)', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def calc_property_tax(
     official_price: int,
     year: int,
@@ -618,7 +619,7 @@ def calc_property_tax(
                if taxable_base_cap <= 0 else ""),
     }
 
-@mcp.tool()
+@mcp.tool(title='Comprehensive holding tax (종부세)', annotations=ToolAnnotations(title='Comprehensive holding tax (종부세)', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def calc_jongbu_tax(
     total_official_price: int,
     year: int,
@@ -839,7 +840,7 @@ def calc_jongbu_tax(
 
 import tax_judgment as _tj
 
-@mcp.tool()
+@mcp.tool(title='Acquisition tax home count and rate', annotations=ToolAnnotations(title='Acquisition tax home count and rate', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def judge_acquisition_homes_and_rate(
     homes: list[dict],
     in_adjusted_area: bool,
@@ -886,7 +887,7 @@ def judge_acquisition_homes_and_rate(
         gift_from_one_home_household_to_family,
     )
 
-@mcp.tool()
+@mcp.tool(title='Capital gains reliefs', annotations=ToolAnnotations(title='Capital gains reliefs', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def judge_transfer_reliefs(
     is_one_household_one_home: bool,
     holding_years: float,
@@ -923,7 +924,7 @@ def judge_transfer_reliefs(
         contract_date, deposit_received, contract_months_limit,
     )
 
-@mcp.tool()
+@mcp.tool(title='Same household test', annotations=ToolAnnotations(title='Same household test', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def judge_same_household(
     relationship: str,
     lives_together: bool = True,
@@ -962,7 +963,7 @@ def judge_same_household(
         merged_for_parent_care, descendant_age,
     )
 
-@mcp.tool()
+@mcp.tool(title='Home count for exemption', annotations=ToolAnnotations(title='Home count for exemption', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def count_transfer_homes(items: list[dict]) -> dict:
     """Count homes for the one-household-one-home capital gains exemption, applying statutory exclusions automatically.
 
@@ -981,7 +982,7 @@ def count_transfer_homes(items: list[dict]) -> dict:
     """
     return _tj.count_transfer_homes(items)
 
-@mcp.tool()
+@mcp.tool(title='Temporary two-home exemption', annotations=ToolAnnotations(title='Temporary two-home exemption', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def judge_temporary_two_homes(
     prev_acquired: str,
     new_acquired: str,
@@ -1014,7 +1015,7 @@ def judge_temporary_two_homes(
         new_home_tenant_lease_end, new_contract_date,
     )
 
-@mcp.tool()
+@mcp.tool(title='Special one-home cases (art. 155)', annotations=ToolAnnotations(title='Special one-home cases (art. 155)', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def judge_155_special(
     kind: str,
     event_date: str = "",
@@ -1060,7 +1061,7 @@ def judge_155_special(
         merged_for_parent_care, held_before_merge, designated_by_agreement,
     )
 
-@mcp.tool()
+@mcp.tool(title='Home count for heavy rates', annotations=ToolAnnotations(title='Home count for heavy rates', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def count_heavy_homes(items: list[dict], heavy_tier: int = 3) -> dict:
     """Count homes for heavy capital gains rates, excluding low-value provincial homes and other statutory exclusions.
 
@@ -1079,7 +1080,7 @@ def count_heavy_homes(items: list[dict], heavy_tier: int = 3) -> dict:
     """
     return _tj.count_heavy_homes(items, heavy_tier)
 
-@mcp.tool()
+@mcp.tool(title='Holding tax one-home status', annotations=ToolAnnotations(title='Holding tax one-home status', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def judge_jongbu_one_home_status(other_homes: list[dict], base_date: str = "") -> dict:
     """Comprehensive holding tax: is the owner deemed a one-household-one-home holder (attached land, temporary, inherited, cheap provincial home).
 
@@ -1088,7 +1089,7 @@ def judge_jongbu_one_home_status(other_homes: list[dict], base_date: str = "") -
     유지·9/16~30 신청제 플래그 포함. base_date는 과세기준일(YYYY-MM-DD, 보통 매년 6/1)."""
     return _tj.judge_jongbu_one_home_status(other_homes, base_date)
 
-@mcp.tool()
+@mcp.tool(title='Priority inherited home', annotations=ToolAnnotations(title='Priority inherited home', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def judge_inherited_house_priority(houses: list[dict]) -> dict:
     """When a decedent held several homes, pick the single inherited home that gets the special treatment.
 
@@ -1102,7 +1103,7 @@ def judge_inherited_house_priority(houses: list[dict]) -> dict:
     is_first_priority_inherited로 전달한다. 선순위 아닌 나머지는 주택수에 그대로 산입."""
     return _tj.judge_inherited_house_priority(houses)
 
-@mcp.tool()
+@mcp.tool(title='Co-inherited home owner', annotations=ToolAnnotations(title='Co-inherited home owner', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def judge_co_inherited_owner(shares: list[dict]) -> dict:
     """Attribute a co-inherited home to one heir under Income Tax Decree art. 155(3).
 
@@ -1115,7 +1116,7 @@ def judge_co_inherited_owner(shares: list[dict]) -> dict:
     종부세는 소액지분(40%↓ 또는 지분공시가 6억·지방 3억↓)이면 기간 무관 제외(영 §4의2②)."""
     return _tj.judge_co_inherited_owner(shares)
 
-@mcp.tool()
+@mcp.tool(title='Attached land limit', annotations=ToolAnnotations(title='Attached land limit', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def calc_attached_land_limit(building_footprint_m2: float, land_area_m2: float,
                              is_urban_area: bool = True, is_capital_region: bool = True,
                              urban_zone: str = "주거상업공업") -> dict:
@@ -1131,7 +1132,7 @@ def calc_attached_land_limit(building_footprint_m2: float, land_area_m2: float,
     return _tj.calc_attached_land_limit(building_footprint_m2, land_area_m2,
                                         is_urban_area, is_capital_region, urban_zone)
 
-@mcp.tool()
+@mcp.tool(title='Reconstruction membership transfer', annotations=ToolAnnotations(title='Reconstruction membership transfer', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def judge_reconstruction_membership_transfer(
     project_type: str,
     in_speculation_overheated_zone: bool,
@@ -1163,7 +1164,7 @@ def judge_reconstruction_membership_transfer(
         owned_years, resided_years, decree_reason, is_partial_share_transfer, is_one_plus_one_small,
     )
 
-@mcp.tool()
+@mcp.tool(title='One-home exemption requirements', annotations=ToolAnnotations(title='One-home exemption requirements', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def judge_exemption_requirements(
     is_one_household_one_home: bool,
     holding_years: float,
@@ -1208,7 +1209,7 @@ def judge_exemption_requirements(
         sangsaeng_nonresident_contract,
     )
 
-@mcp.tool()
+@mcp.tool(title='Rental income tax status', annotations=ToolAnnotations(title='Rental income tax status', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def judge_rental_income_tax(
     tax_year: int,
     own_homes: list[dict],
@@ -1240,7 +1241,7 @@ def judge_rental_income_tax(
         deposit_interest_rate, financial_income, tax_reduction,
     )
 
-@mcp.tool()
+@mcp.tool(title='Separate rental income tax', annotations=ToolAnnotations(title='Separate rental income tax', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def calc_rental_income_tax(
     registered_revenue: int = 0,
     unregistered_revenue: int = 0,
@@ -1259,7 +1260,7 @@ def calc_rental_income_tax(
         registered_revenue, unregistered_revenue, other_comprehensive_income, tax_reduction
     )
 
-@mcp.tool()
+@mcp.tool(title='Dealer vs individual seller', annotations=ToolAnnotations(title='Dealer vs individual seller', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def judge_business_dealer_status(
     acquisitions_in_period: int = 0,
     sales_in_period: int = 0,
@@ -1282,7 +1283,7 @@ def judge_business_dealer_status(
         business_purpose_advertised, is_self_built_sale, is_residential_resale,
     )
 
-@mcp.tool()
+@mcp.tool(title='Dealer comparative tax', annotations=ToolAnnotations(title='Dealer comparative tax', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def calc_dealer_comparative_tax(
     comprehensive_income_tax: int,
     comprehensive_tax_base: int,
@@ -1302,7 +1303,7 @@ def calc_dealer_comparative_tax(
         comprehensive_income_tax, comprehensive_tax_base, housing_trade_profits, tax_brackets
     )
 
-@mcp.tool()
+@mcp.tool(title='Reconstruction levy (재건축부담금)', annotations=ToolAnnotations(title='Reconstruction levy (재건축부담금)', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def estimate_reconstruction_levy(
     end_price_total: int,
     start_price_total: int,
@@ -1333,7 +1334,7 @@ def estimate_reconstruction_levy(
         is_one_home_at_end, age_at_end,
     )
 
-@mcp.tool()
+@mcp.tool(title='Relief caps and gates', annotations=ToolAnnotations(title='Relief caps and gates', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def judge_transfer_reduction_limit(
     reductions: list[dict],
     tax_year: int,
@@ -1357,7 +1358,7 @@ def judge_transfer_reduction_limit(
         contract_price_mismatch, unregistered_transfer,
     )
 
-@mcp.tool()
+@mcp.tool(title='Small-home landlord reduction', annotations=ToolAnnotations(title='Small-home landlord reduction', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def judge_small_house_rental_reduction(
     tax_year: int,
     rental_house_count: int,
@@ -1386,7 +1387,7 @@ def judge_small_house_rental_reduction(
         rent_increase_rate, income_tax_before_reduction, rental_months,
     )
 
-@mcp.tool()
+@mcp.tool(title='Self-cultivated farmland exemption', annotations=ToolAnnotations(title='Self-cultivated farmland exemption', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def judge_farmland_reduction(
     farming_years_claimed: float,
     resides_within_scope: bool,
@@ -1411,7 +1412,7 @@ def judge_farmland_reduction(
         zone_converted_date, transfer_date, estimated_tax,
     )
 
-@mcp.tool()
+@mcp.tool(title='Farmland substitution exemption', annotations=ToolAnnotations(title='Farmland substitution exemption', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def judge_farmland_daeto(
     prior_reside_years: float,
     transfer_date: str,
@@ -1439,7 +1440,7 @@ def judge_farmland_daeto(
         total_farming_years, new_area_ratio, new_price_ratio, is_expropriation, estimated_tax,
     )
 
-@mcp.tool()
+@mcp.tool(title='Homes excluded from the count', annotations=ToolAnnotations(title='Homes excluded from the count', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def judge_second_home_exclusion(
     kind: str,
     acquired_date: str,
@@ -1476,7 +1477,7 @@ def judge_second_home_exclusion(
         exclusive_area_m2, acquisition_price, first_contract, seller_is_supplier,
     )
 
-@mcp.tool()
+@mcp.tool(title='First-home acquisition relief', annotations=ToolAnnotations(title='First-home acquisition relief', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def judge_first_home_acquisition_relief(
     acquisition_price: int,
     no_home_history: bool = True,
@@ -1502,7 +1503,7 @@ def judge_first_home_acquisition_relief(
         house_type, in_depopulation_area, acquired_date, co_owners,
     )
 
-@mcp.tool()
+@mcp.tool(title='Family loan vs gift', annotations=ToolAnnotations(title='Family loan vs gift', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def judge_family_loan(loan_amount: int, agreed_interest_rate: float = 0.0) -> dict:
     """Family loan vs gift screening: 4.6% benchmark rate and the 10 million won threshold (Inheritance and Gift Tax Act art. 41-4).
 
@@ -1513,7 +1514,7 @@ def judge_family_loan(loan_amount: int, agreed_interest_rate: float = 0.0) -> di
     """
     return _tj.judge_family_loan(loan_amount, agreed_interest_rate)
 
-@mcp.tool()
+@mcp.tool(title='Funding plan requirement', annotations=ToolAnnotations(title='Funding plan requirement', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def judge_fund_plan_requirement(
     actual_price: int,
     in_speculation_zone: bool = False,
@@ -1529,7 +1530,7 @@ def judge_fund_plan_requirement(
         actual_price, in_speculation_zone, in_adjusted_area, in_permit_zone, is_corporation
     )
 
-@mcp.tool()
+@mcp.tool(title='Consultation report', annotations=ToolAnnotations(title='Consultation report', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def format_consultation_report(
     conclusion: str,
     evidences: list[dict],
@@ -1549,7 +1550,7 @@ def format_consultation_report(
     해석례 추천검색(search_tax_rulings용 쿼리)을 자동 도출해 '추천검색'으로 반환."""
     return _tj.format_consultation_report(conclusion, evidences, owner_qa, scenarios, dividing_issue, issue_grade)
 
-@mcp.tool()
+@mcp.tool(title='Adjusted area on a date', annotations=ToolAnnotations(title='Adjusted area on a date', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def judge_adjusted_area_at_date(region: str, target_date: str) -> dict:
     """Was a location an adjusted (regulated) area on a given date, from the designation history.
 
@@ -1561,7 +1562,7 @@ def judge_adjusted_area_at_date(region: str, target_date: str) -> dict:
     judge_exemption_requirements에 연결. 과거분(2017~2025) 백필은 액션백로그 진행 중."""
     return _tj.judge_adjusted_area_at_date(region, target_date)
 
-@mcp.tool()
+@mcp.tool(title='Consultation output', annotations=ToolAnnotations(title='Consultation output', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def format_consultation_output(
     scenarios: list[dict],
     dividing_issue: str = "",
@@ -1592,7 +1593,7 @@ def _sangjeung_progressive(tax_base: int, year: int) -> tuple[int, float]:
             return max(0, int(tax_base * b["rate"] - b["deduction"])), b["rate"]
     return 0, 0.0
 
-@mcp.tool()
+@mcp.tool(title='Gift tax (증여세)', annotations=ToolAnnotations(title='Gift tax (증여세)', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def calc_gift_tax(
     taxable_value: int,
     year: int,
@@ -1672,7 +1673,7 @@ def calc_gift_tax(
         ],
     }
 
-@mcp.tool()
+@mcp.tool(title='Inheritance tax (상속세)', annotations=ToolAnnotations(title='Inheritance tax (상속세)', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def calc_inheritance_tax(
     taxable_value: int,
     year: int,
@@ -1745,7 +1746,7 @@ def calc_inheritance_tax(
         ],
     }
 
-@mcp.tool()
+@mcp.tool(title='Search tax rulings', annotations=ToolAnnotations(title='Search tax rulings', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True))
 async def search_tax_rulings(query: str, source: str = "국세청해석", display: int = 10) -> dict:
     """Search official Korean tax rulings and tribunal decisions used as regression answers.
 
@@ -1781,7 +1782,7 @@ async def search_tax_rulings(query: str, source: str = "국세청해석", displa
         resp.raise_for_status()
         return resp.json()
 
-@mcp.tool()
+@mcp.tool(title='Home plus pre-sale right case', annotations=ToolAnnotations(title='Home plus pre-sale right case', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def judge_156_3_special(
     prior_home_acquired: str,
     bunyang_acquired: str,
@@ -1848,7 +1849,7 @@ def judge_156_3_special(
 
 import relief_catalog as _rc  # noqa: E402  (감면 색인 — 판정 아님, C등급)
 
-@mcp.tool()
+@mcp.tool(title='Relief candidates to check', annotations=ToolAnnotations(title='Relief candidates to check', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def screen_relief_candidates(
     tax_types: str = "",
     situation: str = "",
@@ -1887,7 +1888,7 @@ def screen_relief_candidates(
         limit=limit,
     )
 
-@mcp.tool()
+@mcp.tool(title='Home plus pre-sale right (portfolio)', annotations=ToolAnnotations(title='Home plus pre-sale right (portfolio)', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def judge_156_3_from_portfolio(
     items: list[dict],
     sale_date: str,
@@ -1940,7 +1941,7 @@ def judge_156_3_from_portfolio(
         partial_move_reason=partial_move_reason,
     )
 
-@mcp.tool()
+@mcp.tool(title='Relief catalog entry', annotations=ToolAnnotations(title='Relief catalog entry', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def get_relief_catalog_entry(article: str) -> dict:
     """Look up one relief catalog entry by statute reference.
 
@@ -1957,8 +1958,20 @@ def get_relief_catalog_entry(article: str) -> dict:
 
 
 def main() -> None:
-    """콘솔 진입점(pyproject [project.scripts]) — stdio MCP 서버."""
-    mcp.run()
+    """콘솔 진입점(pyproject [project.scripts]).
+
+    기본은 stdio. 환경변수 MCP_TRANSPORT=streamable-http 이면 HTTP 서버로 뜬다(원격 커넥터용):
+    HOST(기본 0.0.0.0)·PORT(기본 8000)·MCP_PATH(기본 /mcp). 인증은 없으니 공개 배포 시 앞단에서 처리한다.
+    """
+    transport = os.environ.get("MCP_TRANSPORT", "stdio")
+    if transport == "streamable-http":
+        mcp.settings.host = os.environ.get("HOST", "0.0.0.0")
+        mcp.settings.port = int(os.environ.get("PORT", "8000"))
+        mcp.settings.streamable_http_path = os.environ.get("MCP_PATH", "/mcp")
+        mcp.settings.stateless_http = True
+        mcp.run(transport="streamable-http")
+    else:
+        mcp.run()
 
 
 if __name__ == "__main__":
