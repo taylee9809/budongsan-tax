@@ -94,4 +94,4 @@ GNU Affero General Public License v3.0 or later. 고쳐서 네트워크 서비�
 공개해야 한다. 닫힌 서비스에 넣으려면 따로 문의하라.
 
 ---
-생성: `scripts/package_opensource.py` (원본 git 4504b82)
+생성: `scripts/package_opensource.py` (원본 git ee360cf)
