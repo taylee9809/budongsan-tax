@@ -1,6 +1,6 @@
 # budongsan-tax
 
-> Korean real-estate tax engine and MCP server (stdio). 43 tools, 426 statute nodes, official rulings as regression tests. Every result lists the statute articles applied and not applied. Not tax advice.
+> Korean real-estate tax engine and MCP server (stdio). 43 tools, 527 statute nodes, official rulings as regression tests. Every result lists the statute articles applied and not applied. Not tax advice.
 
 Repository: https://github.com/taylee9809/budongsan-tax
 MCP registry name: io.github.taylee9809/budongsan-tax

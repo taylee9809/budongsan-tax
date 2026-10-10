@@ -44,12 +44,12 @@ Each row compares the statute-node engine against the legacy calculator/judge (o
 | 증여세·상속세 | server.calc_gift_tax / calc_inheritance_tax | 증여세 격자 | 576 | 0 |  |
 | 증여세·상속세 | server.calc_gift_tax / calc_inheritance_tax | 상속세 격자 | 384 | 0 |  |
 | 재건축부담금 | server.estimate_reconstruction_levy | 재건축부담금 격자 | 1,440 | 0 |  |
+| 취득세 과세표준·세율특례·중과범위 | 조문표 | 취득세 과세표준·특례·중과 | 57 | 0 |  |
+| 지방세특례제한법 취득세·재산세 감면 | 조문표 | 지방세특례제한법 감면 | 154 | 0 |  |
 | 재산세 토지구분·비사업용 토지·중과 제외·조특법 잔여 | 조문표 / count_heavy_homes / judge_second_home_exclusion | 중과 제외·HH 회귀 | 7 | 0 |  |
 | 재산세 토지구분·비사업용 토지·중과 제외·조특법 잔여 | 조문표 / count_heavy_homes / judge_second_home_exclusion | 조특법 잔여·RH 회귀 | 8 | 0 |  |
 
-합계 / total: **8,291건, 불일치 0**
-
-실행 실패 / not run: verify_chwideuk_gwase_nodes.py (요약 줄 없음, rc=0)
+합계 / total: **8,502건, 불일치 0**
 
 ## 읽는 법 / how to read
 
