@@ -431,7 +431,7 @@ def 제19조제1항(ctx):
     p = tax_params.get_param("상속세.배우자공제", ctx.연도)
     ctx.상수근거["배우자공제"] = tax_params.cite("상속세.배우자공제", ctx.연도)
     실제 = int(ctx.사실값("배우자_실제상속액", 0) or 0)
-    법정 = int(ctx.사실값("배우자_법정지분한도", 0) or 0)
+    법정 = int(ctx.값("배우자_법정지분한도", 0) or 0)   # 호출자 값이 없으면 영 §17 노드(sangjeung_rest.py)가 산식으로 낸다
     if not ctx.사실값("배우자_분할기한내분할", True):
         return p["최소"]
     후보 = [c for c in (실제, 법정, p["한도"]) if c > 0]
