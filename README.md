@@ -14,15 +14,15 @@ mcp-name: io.github.taylee9809/budongsan-tax
 
 *English.* Korean real-estate tax engine and MCP server: acquisition, property, comprehensive holding,
 capital gains, rental income, gift and inheritance tax, reconstruction levy. 43 tools,
-350 statute nodes (one function per article or paragraph), official rulings as regression tests.
-Every result carries the statute trail. Tool list with one-line descriptions: [`llms.txt`](llms.txt).
+351 statute nodes (one function per article or paragraph), official rulings as regression tests.
+Every result carries the statute trail. English README: [`README-EN.md`](README-EN.md). Tool list: [`llms.txt`](llms.txt).
 
 ## 숫자
 
 | | |
 |---|---|
 | MCP 도구 | 43 |
-| 실행 노드 | 350 (조·항·호 하나가 함수 하나) |
+| 실행 노드 | 351 (조·항·호 하나가 함수 하나) |
 | 전환 대기 조문 | 0 (법문 코퍼스에 있는 세액영향 조문은 전부 옮겼다) |
 | 회귀 케이스 / 해석례 / 결함 기록 | 307 / 1318 / 39 |
 
@@ -37,9 +37,20 @@ Every result carries the statute trail. Tool list with one-line descriptions: [`
 | 검증 | `data/verification/`, `tax_case_store.py` | 케이스, 결함, 해석례 |
 
 조문별 이관 상태는 [`docs/NODE_COVERAGE.md`](docs/NODE_COVERAGE.md)에 있다.
+세목별 검증 결과와 불일치 건수는 [`docs/BENCH.md`](docs/BENCH.md), 조문 근거가 붙은 실제 출력 예시는 [`docs/EXAMPLE.md`](docs/EXAMPLE.md)에 있다.
 코퍼스에 원문이 없는 조문(미착수)은 원문을 넣는 일이 먼저다.
 
 ## 설치
+
+PyPI에 있다. uv가 있으면 설치 없이 바로 뜬다.
+
+```bash
+uvx budongsan-tax
+```
+
+Claude Code 한 줄: `claude mcp add budongsan-tax -- uvx budongsan-tax`
+
+소스로 돌리려면:
 
 ```bash
 pip install -r requirements.txt
@@ -58,8 +69,6 @@ Claude Desktop `claude_desktop_config.json`:
 ```json
 {"mcpServers": {"budongsan-tax": {"command": "python", "args": ["/절대경로/tax_server.py"]}}}
 ```
-
-PyPI에 올라간 뒤에는 `uvx budongsan-tax` 한 줄로 뜬다. `server.json`과 `pyproject.toml`이 그 준비다.
 
 회귀 테스트용 DB(선택):
 
@@ -94,4 +103,4 @@ GNU Affero General Public License v3.0 or later. 고쳐서 네트워크 서비�
 공개해야 한다. 닫힌 서비스에 넣으려면 따로 문의하라.
 
 ---
-생성: `scripts/package_opensource.py` (원본 git ee360cf)
+생성: `scripts/package_opensource.py` (원본 git 4f58fe0)
