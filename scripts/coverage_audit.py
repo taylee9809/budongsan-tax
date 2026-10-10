@@ -83,6 +83,13 @@ OUT_OF_SCOPE = {
 }
 
 
+# 조문 제목으로 거르는 범위밖 — 부동산 세금 엔진이 다루지 않는 과세물건(차량·선박·항공기·기계장비 등).
+# 장 단위 OUT_OF_SCOPE로는 못 거르는, 취득세 장 안의 비부동산 조문용이다. 2026-10-10.
+OUT_OF_SCOPE_TITLE_KW = ["차량", "자동차", "선박", "항공기", "기계장비", "농기계", "이륜", "무선국", "이동통신", "해운항만", "항공운송",
+                         "철도시설", "광업", "주유소", "도시가스", "별정우체국", "해양오염", "경형자동차", "교환자동차", "노후경유", "중고자동차",
+                         "운송사업", "교통안전", "물류단지", "도시첨단물류", "장애인용 자동차"]
+
+
 def chapter_of(text):
     """'제9장 재산세 <개정 …>' → '제9장 재산세'"""
     return re.sub(r"\s*<[^>]*>", "", re.sub(r"\s+", " ", text)).strip()
@@ -268,6 +275,8 @@ def main():
             key = (a["조문번호"], a["가지번호"])
             excl = [c for c in OUT_OF_SCOPE.get(name, [])
                     if a["장"].startswith(c) or a["절"].startswith(c)]
+            if not excl and name.startswith(("지방세법", "지방세특례제한법")):
+                excl = ["비부동산:" + k for k in OUT_OF_SCOPE_TITLE_KW if k in a["조문제목"]][:1]
             dom = any(k in a["조문제목"] for k in DOMAIN_KW)
             row = dict(a, covered=key in covered, 분류=classify(a["조문제목"]),
                        부동산도메인=dom, 범위밖=(excl[0] if excl else ""))

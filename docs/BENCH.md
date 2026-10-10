@@ -49,6 +49,8 @@ Each row compares the statute-node engine against the legacy calculator/judge (o
 
 합계 / total: **8,291건, 불일치 0**
 
+실행 실패 / not run: verify_chwideuk_gwase_nodes.py (요약 줄 없음, rc=0)
+
 ## 읽는 법 / how to read
 
 - 불일치 0은 '노드가 기존 구현과 같다'는 뜻이지 '법이 맞다'는 뜻이 아니다. 기존 구현의 결함은 노드 전환 과정에서 발견되면 고치고 `data/verification/findings.jsonl`에 남긴다.
