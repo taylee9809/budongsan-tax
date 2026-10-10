@@ -16,7 +16,7 @@ mcp-name: io.github.taylee9809/budongsan-tax
 
 *English.* Korean real-estate tax engine and MCP server: acquisition, property, comprehensive holding,
 capital gains, rental income, gift and inheritance tax, reconstruction levy. 43 tools,
-351 statute nodes (one function per article or paragraph), official rulings as regression tests.
+426 statute nodes (one function per article or paragraph), official rulings as regression tests.
 Every result carries the statute trail. English README: [`README-EN.md`](README-EN.md). Tool list: [`llms.txt`](llms.txt).
 
 ## 숫자
@@ -24,7 +24,7 @@ Every result carries the statute trail. English README: [`README-EN.md`](README-
 | | |
 |---|---|
 | MCP 도구 | 43 |
-| 실행 노드 | 351 (조·항·호 하나가 함수 하나) |
+| 실행 노드 | 426 (조·항·호 하나가 함수 하나) |
 | 전환 대기 조문 | 0 (법문 코퍼스에 있는 세액영향 조문은 전부 옮겼다) |
 | 회귀 케이스 / 해석례 / 결함 기록 | 307 / 1318 / 39 |
 
@@ -111,4 +111,4 @@ GNU Affero General Public License v3.0 or later. 고쳐서 네트워크 서비�
 공개해야 한다. 닫힌 서비스에 넣으려면 따로 문의하라.
 
 ---
-생성: `scripts/package_opensource.py` (원본 git e2029eb)
+생성: `scripts/package_opensource.py` (원본 git cc79318)
