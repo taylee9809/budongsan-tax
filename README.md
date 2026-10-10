@@ -2,6 +2,8 @@
 
 mcp-name: io.github.taylee9809/budongsan-tax
 
+![demo](docs/demo.gif)
+
 한국 부동산 세금을 계산하고 판정하는 엔진이다. MCP 서버로 돈다.
 취득세, 재산세, 종합부동산세, 양도소득세, 주택임대소득세, 증여세와 상속세(부동산), 재건축부담금을 다룬다.
 
@@ -85,6 +87,12 @@ python -m pytest tests
 
 전체 목록과 한 줄 설명은 [`llms.txt`](llms.txt)에 있다.
 
+비슷한 이름의 서버와 다른 점. 법령·해석례 검색 서버(예: korean-tax-mcp)는 원문을 찾아 주고 판단은 AI에 맡긴다.
+이 저장소는 반대로 세액을 계산하고 요건을 판정하며, 그 근거 조문을 결과에 붙인다. 둘은 겹치지 않고 같이 쓰인다.
+
+원격(HTTP)으로 띄우려면 `MCP_TRANSPORT=streamable-http budongsan-tax` 또는 `Dockerfile`. 엔드포인트는 `/mcp`, 인증은 없다.
+도구마다 title과 readOnlyHint가 붙어 있어 커넥터 디렉터리 제출 요건을 채운다.
+
 ## 기여
 
 [`CONTRIBUTING.md`](CONTRIBUTING.md)를 보라. 틀린 결과 하나를 케이스 한 줄로 적어 주는 것이 가장 큰 기여다.
@@ -103,4 +111,4 @@ GNU Affero General Public License v3.0 or later. 고쳐서 네트워크 서비�
 공개해야 한다. 닫힌 서비스에 넣으려면 따로 문의하라.
 
 ---
-생성: `scripts/package_opensource.py` (원본 git 4f58fe0)
+생성: `scripts/package_opensource.py` (원본 git 6a3ca9d)
