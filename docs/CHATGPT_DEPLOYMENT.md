@@ -1,5 +1,7 @@
 # ChatGPT 연결 준비
 
+배포된 서버의 실제 연결 값과 다음 단계는 [CHATGPT_CONNECT.md](CHATGPT_CONNECT.md)를 참고한다.
+
 생성된 `tax_server.py`는 수정하지 않고 `tax_http.py`를 원격 연결 진입점으로 쓴다.
 이 문서와 템플릿은 준비물이다. 인터넷 배포·ChatGPT 연결·심사 승인은 각각 따로 확인한다.
 

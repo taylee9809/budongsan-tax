@@ -15,8 +15,14 @@ Verified on 2026-10-11 (Asia/Seoul):
 - Public HTTPS origin accepted; non-HTTPS origin rejected.
 - `git diff --check`: no whitespace errors.
 
-Not performed: Docker image build (Docker unavailable here), internet deployment,
-ChatGPT dialogue tests, independent tax correctness audit, publisher verification,
+Subsequently verified on 2026-10-12 (Asia/Seoul):
+- GitHub Actions built the Docker image successfully (Docker unavailable locally).
+- Public deployment at `https://budongsan-tax-preview.onrender.com`.
+- Public HTTPS MCP initialization, 39 listed tools, 5 successful synthetic calls,
+  and rejection of a negative acquisition price. Evidence: `dist/render-public-check.json`.
+- Actual connection settings and account-side steps: `docs/CHATGPT_CONNECT.md`.
+
+Not performed: ChatGPT dialogue tests, independent tax correctness audit, publisher verification,
 policy-page publication, demo recording, platform submission or approval.
 The package builder needs real endpoint/publisher/policy/demo values before making
 a submission ZIP. `plugin/review-cases.json` contains proposed dialogue checks,
