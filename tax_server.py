@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """korea-realestate 세금 판정·계산 MCP 서버 (공개판).
 
-이 파일은 scripts/extract_tax_server.py 가 server.py(비공개 통합 서버, git 6e03a86)에서
+이 파일은 scripts/extract_tax_server.py 가 server.py(비공개 통합 서버, git 3900a28)에서
 세금 도구와 그 의존 정의만 AST로 뽑아 생성한 것이다. 손으로 고치지 말고 생성기를 다시 돌린다.
 도구 43개. 법령·재결례 조회 도구는 .env의 LAW_OC(법제처 Open API 키, 무료)가 있을 때만 동작한다.
 """
@@ -361,10 +361,22 @@ def calc_acquisition_tax(
     ordinance_adjustment_rate: float = 0.0,
     local_education_tax_rate: float = -1.0,
     rural_special_tax_rate: float = -1.0,
+    rate_special: str = "",
 ) -> dict:
     """Korea acquisition tax (취득세) on real estate plus local education tax and rural special tax, by year and acquisition type.
 
     취득세(+지방교육세+농어촌특별세)를 계산한다. 세율은 year로 상수표에서 읽는다.
+
+    rate_special (2026-10-12 추가): 지방세법 §15①(세율의 특례) 해당 호. "" | "환매" | "상속1가구1주택" |
+      "상속자경농지" | "적격합병" | "공유물분할" | "건축물이전" | "재산분할" | "형식적취득" | "없음".
+      §15①이면 §11 세율에서 중과기준세율(2%)을 뺀 세율(주택유상은 해당 세율×50%)이 취득세율이다 —
+      공유물분할(본인 지분 이내) 0.3%, 상속 1가구1주택 0.8%, 재산분할(무상 3.5%) 1.5%.
+      acquisition_type="공유물분할"은 §11①5호 자체가 본인 지분 이내 분할이라 §15①4호를 자동 적용한다
+      (지분 초과분은 유상·무상 유형으로 따로 계산; 자동 적용을 끄려면 "없음").
+      지방교육세는 §151①1호대로 (§11 세율−2%)×20% 그대로, 농특세 취득세분(§5①6호)은 표준세율 2% 치환
+      재계산이라 0(주택유상은 2%×50%×10%), 감면분(§2①3호·§5①1호 감면세액×20%)은 건축물이전·재산분할만
+      과세(1~4·7호는 §4 8호·영 §4④·10의4 비과세), 전용 85㎡ 이하 주택은 §4 11호 비과세.
+      heavy_type과 함께 줄 수 없다(재산분할은 영 §28의6②2호로 무상 중과 제외).
 
     ⚠️ 2026-08-30 변경 — year 필수. 종전에는 세 세율을 전부 호출자가 계산해 넘겨야 했고,
     특히 부가세 두 개는 '취득세액×비율'이 아니라 **세율을 갈아끼워 다시 산출**하는 구조라
@@ -373,7 +385,7 @@ def calc_acquisition_tax(
 
     acquisition_type: "주택유상"(§11①8호 구간세율 1~3%) / "유상.농지외"(4%) / "유상.농지"(3%)
       / "상속.농지외"(2.8%) / "상속.농지"(2.3%) / "무상"(3.5%) / "무상.비영리사업자"(2.8%)
-      / "원시취득"(2.8%) / "공유물분할"(2.3%)
+      / "원시취득"(2.8%) / "공유물분할"(§11①5호 2.3% → 본인 지분 이내라 §15①4호 0.3% 자동, rate_special 참고)
     heavy_type: §13의2 중과 유형. "" | "법인" | "2주택조정_또는_3주택비조정"
       | "3주택이상조정_또는_4주택이상비조정". 일시적 2주택은 §13의2①2호 괄호로 제외되므로
       판정 결과가 '중과 아님'이면 빈 문자열을 넘길 것.
@@ -414,6 +426,17 @@ def calc_acquisition_tax(
     """
     if acquisition_price <= 0:
         raise ValueError("acquisition_price는 0보다 커야 합니다")
+    특례호 = {"환매": "1호", "상속1가구1주택": "2호가목", "상속자경농지": "2호나목", "적격합병": "3호",
+            "공유물분할": "4호", "건축물이전": "5호", "재산분할": "6호", "형식적취득": "7호"}
+    if rate_special == "없음":
+        rate_special = ""
+    elif not rate_special and acquisition_type == "공유물분할":
+        rate_special = "공유물분할"
+    if rate_special and rate_special not in 특례호:
+        raise ValueError("rate_special은 %s 중 하나여야 합니다(받은 값: %r)" % (list(특례호) + ["없음"], rate_special))
+    if rate_special and heavy_type:
+        raise ValueError("rate_special(§15①)과 heavy_type(§13의2)을 함께 줄 수 없습니다 — 둘 다 해당하면 §16⑤로 높은 세율이므로 "
+                         "각각 계산해 큰 쪽을 쓰십시오(재산분할은 영 §28의6②2호로 무상 중과 제외)")
 
     # ── 1·2층 배선 ──────────────────────────────────────────────────────────
     src = {}
@@ -450,14 +473,36 @@ def calc_acquisition_tax(
             year, standard_rate, is_housing_sale=is_housing_sale,
             heavy_13_2=bool(heavy_type))
         src["지방교육세"] = tax_params.cite("취득세.지방교육세.산식", year)
+    중과기준 = tax_params.get_param("취득세.중과기준세율", year)
+
+    def _특례세율(r: float) -> float:          # 지방세법 §15① 본문
+        return round(r * 0.5 if is_housing_sale else max(r - 중과기준, 0.0), 6)
+
     if rural_special_tax_rate < 0:
         exempt = bool(exclusive_area) and exclusive_area <= 85
-        rural_special_tax_rate = tax_params.acquisition_rural_special_rate(
-            year, heavy_multiplier=배수, exempt=exempt)
-        src["농특세"] = tax_params.cite("농특세.취득세분.세율", year) + (
-            " / 전용 85㎡ 이하 비과세(농특세법 §4 11호)" if exempt else "")
+        if rate_special:
+            농특 = tax_params.get_param("농특세.취득세분.세율", year)
+            취득분 = _특례세율(농특["표준세율치환"]) * 농특["세율"]          # §5①6호 — 표준세율 2% 치환 재계산
+            감면분 = 0.0
+            if 특례호[rate_special] in ("5호", "6호") and not exempt:     # §2①3호·§5①1호, 1~4·7호는 §4 8호·10의4 비과세
+                일반 = standard_rate + ordinance_adjustment_rate
+                감면분 = max(일반 - _특례세율(일반), 0.0) * 0.2
+            rural_special_tax_rate = 0.0 if exempt else round(취득분 + 감면분, 6)
+            src["농특세"] = ("농특세법 §5①6호(표준세율 2% 치환 → §15① 적용) + 감면분 §2①3호·§5①1호(감면세액×20%, 5·6호만)"
+                          + (" / 전용 85㎡ 이하 비과세(§4 11호)" if exempt else ""))
+        else:
+            rural_special_tax_rate = tax_params.acquisition_rural_special_rate(
+                year, heavy_multiplier=배수, exempt=exempt)
+            src["농특세"] = tax_params.cite("농특세.취득세분.세율", year) + (
+                " / 전용 85㎡ 이하 비과세(농특세법 §4 11호)" if exempt else "")
 
-    applied_rate = standard_rate + heavy_surcharge_rate + ordinance_adjustment_rate
+    if rate_special:
+        applied_rate = _특례세율(standard_rate + ordinance_adjustment_rate)
+        src["세율의 특례"] = "지방세법 §15①%s(%s) — %s" % (
+            특례호[rate_special], rate_special,
+            "주택유상 세율×50%" if is_housing_sale else "표준세율 − 중과기준세율 %.3f" % 중과기준)
+    else:
+        applied_rate = standard_rate + heavy_surcharge_rate + ordinance_adjustment_rate
     acquisition_tax = int(acquisition_price * applied_rate)
     local_education_tax = int(acquisition_price * local_education_tax_rate)
     rural_special_tax = int(acquisition_price * rural_special_tax_rate)
@@ -469,6 +514,7 @@ def calc_acquisition_tax(
     return {
         "취득가액": acquisition_price,
         "적용세율(표준+중과+조례)": round(applied_rate, 6),
+        "세율의 특례": rate_special or None,
         "취득세": acquisition_tax,
         "지방교육세": local_education_tax,
         "농어촌특별세": rural_special_tax,

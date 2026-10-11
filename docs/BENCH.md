@@ -13,7 +13,7 @@ Each row compares the statute-node engine against the legacy calculator/judge (o
 | 종부세(토지·1세대1주택자 간주) | judge_jongbu_one_home_status / 조문표 | 토지분 | 13 | 0 |  |
 | 종부세(토지·1세대1주택자 간주) | judge_jongbu_one_home_status / 조문표 | §8④ 회귀 | 14 | 0 |  |
 | 종부세(토지·1세대1주택자 간주) | judge_jongbu_one_home_status / 조문표 | §8④ 격자 | 78 | 0 |  |
-| 취득세 | server.calc_acquisition_tax 등 | 격자 | 416 | 0 | 1원 반올림차 56 |
+| 취득세 | server.calc_acquisition_tax 등 | 격자 | 416 | 0 | 1원 반올림차 48 |
 | 취득세 | server.calc_acquisition_tax 등 | AQ | 22 | 0 |  |
 | 취득세 | server.calc_acquisition_tax 등 | FH | 10 | 0 |  |
 | 양도세(본세) | server.calc_transfer_tax / judge_* | 격자 | 240 | 0 | 1원 반올림차 6 |
@@ -44,7 +44,7 @@ Each row compares the statute-node engine against the legacy calculator/judge (o
 | 증여세·상속세 | server.calc_gift_tax / calc_inheritance_tax | 증여세 격자 | 576 | 0 |  |
 | 증여세·상속세 | server.calc_gift_tax / calc_inheritance_tax | 상속세 격자 | 384 | 0 |  |
 | 재건축부담금 | server.estimate_reconstruction_levy | 재건축부담금 격자 | 1,440 | 0 |  |
-| 취득세 과세표준·세율특례·중과범위 | 조문표 | 취득세 과세표준·특례·중과 | 57 | 0 |  |
+| 취득세 과세표준·세율특례·중과범위 | 조문표 | 취득세 과세표준·특례·중과 | 73 | 0 |  |
 | 지방세특례제한법 취득세·재산세 감면 | 조문표 | 지방세특례제한법 감면 | 154 | 0 |  |
 | 지방세특례제한법 사업자·단체 감면 | 조문표 | 지방세특례제한법 사업자·단체 감면 | 285 | 0 |  |
 | 양도세 잔여(소득세법 계산순서·국외자산·국외전출·조특법 미분양·신축·임대·이전 특례) | 조문표 | 양도세 잔여 — 계산순서·국외자산·국외전출·조특법 특례 | 118 | 0 |  |
@@ -58,11 +58,11 @@ Each row compares the statute-node engine against the legacy calculator/judge (o
 | 조특법 기타 6(비양도·비부동산 특례) | 조문표 | 조특 기타 6 | 283 | 0 |  |
 | 조특법 기타 7(비양도·비부동산 특례) | 조문표 | 조특 기타 7 | 241 | 0 |  |
 | 조특법 기타 8(비양도·비부동산 특례) | 조문표 | 조특 기타 8 | 224 | 0 |  |
-| 판례 회귀(조세심판원·대법원·국세청 예규·행안부 해석·국세상담) | 판례 결론 — data/verification/node_cases/ | 판례 회귀 | 991 | 0 |  |
+| 판례 회귀(조세심판원·대법원·국세청 예규·행안부 해석·국세상담) | 판례 결론 — data/verification/node_cases/ | 판례 회귀 | 995 | 0 |  |
 | 재산세 토지구분·비사업용 토지·중과 제외·조특법 잔여 | 조문표 / count_heavy_homes / judge_second_home_exclusion | 중과 제외·HH 회귀 | 7 | 0 |  |
 | 재산세 토지구분·비사업용 토지·중과 제외·조특법 잔여 | 조문표 / count_heavy_homes / judge_second_home_exclusion | 조특법 잔여·RH 회귀 | 8 | 0 |  |
 
-합계 / total: **12,642건, 불일치 0**
+합계 / total: **12,662건, 불일치 0**
 
 ## 읽는 법 / how to read
 
