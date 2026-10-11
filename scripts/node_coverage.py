@@ -90,6 +90,8 @@ def _load_nodes():
     import tax_nodes.sangjeung_boyu_rest  # noqa: F401
     import tax_nodes.yangdo_gita_a  # noqa: F401
     import tax_nodes.yangdo_gita_b  # noqa: F401
+    import tax_nodes.sangjeung_gasanse  # noqa: F401
+    import tax_nodes.chwideuk_gasanse  # noqa: F401
     from tax_nodes import 전체
     return 전체()
 
