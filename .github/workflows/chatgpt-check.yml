@@ -16,6 +16,8 @@ jobs:
       - run: pip install . 'mcp>=1.26,<2' pytest
       - run: python scripts/check_chatgpt_http.py
       - run: python -m pytest tests -q
+      - name: Build the deployment image
+        run: docker build -f Dockerfile.chatgpt -t budongsan-tax-chatgpt .
       - uses: actions/upload-artifact@v4
         with:
           name: chatgpt-http-check
