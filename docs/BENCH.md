@@ -58,11 +58,11 @@ Each row compares the statute-node engine against the legacy calculator/judge (o
 | 조특법 기타 6(비양도·비부동산 특례) | 조문표 | 조특 기타 6 | 283 | 0 |  |
 | 조특법 기타 7(비양도·비부동산 특례) | 조문표 | 조특 기타 7 | 241 | 0 |  |
 | 조특법 기타 8(비양도·비부동산 특례) | 조문표 | 조특 기타 8 | 224 | 0 |  |
-| 판례 회귀(조세심판원·대법원·국세청 예규·행안부 해석·국세상담) | 판례 결론 — data/verification/node_cases/ | 판례 회귀 | 995 | 0 |  |
+| 판례 회귀(조세심판원·대법원·국세청 예규·행안부 해석·국세상담) | 판례 결론 — data/verification/node_cases/ | 판례 회귀 | 998 | 0 |  |
 | 재산세 토지구분·비사업용 토지·중과 제외·조특법 잔여 | 조문표 / count_heavy_homes / judge_second_home_exclusion | 중과 제외·HH 회귀 | 7 | 0 |  |
 | 재산세 토지구분·비사업용 토지·중과 제외·조특법 잔여 | 조문표 / count_heavy_homes / judge_second_home_exclusion | 조특법 잔여·RH 회귀 | 8 | 0 |  |
 
-합계 / total: **12,662건, 불일치 0**
+합계 / total: **12,665건, 불일치 0**
 
 ## 읽는 법 / how to read
 
