@@ -548,6 +548,23 @@ def judge_fund_plan_requirement(actual_price: int, in_speculation_zone: bool = F
 FAMILY_SCOPE = {"배우자", "직계존속", "직계비속", "직계존비속의 배우자", "형제자매"}
 
 
+def _sec152_3(age, is_minor: bool, is_married_or_was: bool, income_over_40pct_median: bool,
+              minor_unavoidable: bool = False) -> tuple[bool, str]:
+    """소득세법 시행령 §152의3 — 배우자 없이도 1세대가 되는지. 1호 30세 → 2호 배우자 사망·이혼 → 3호 소득요건.
+    미성년 단서는 3호 안의 단서라 1·2호에는 미치지 않는다(2026-10-11 판례 회귀 보정, findings #40)."""
+    if age is not None and age >= 30:
+        return True, "30세 이상 — 분리 가능 (영 §152의3 1호)"
+    if is_married_or_was:
+        return True, "혼인(또는 이혼·사별) — 분리 가능 (영 §152의3 2호)"
+    if income_over_40pct_median:
+        if is_minor and not minor_unavoidable:
+            return False, "미성년자 — 소득요건(3호)은 미성년자 제외(결혼·가족 사망 등 불가피 사유 외) (영 §152의3 3호 단서)"
+        return True, "기준 중위소득 40% 이상 + 독립 생계·주거 유지 — 분리 가능 (영 §152의3 3호)"
+    if is_minor:
+        return False, "미성년자 — 결혼·가족 사망 등 불가피 사유 외 분리 불가"
+    return False, "30세 미만·미혼·소득요건 미충족 — 주소 분리해도 동일 세대로 봄"
+
+
 def judge_same_household(relationship: str, lives_together: bool = True,
                          shares_livelihood: bool = True, age: int | None = None,
                          is_married_or_was: bool = False,
@@ -599,6 +616,14 @@ def judge_same_household(relationship: str, lives_together: bool = True,
 
     # 2) 가족이면서 동거·생계동일이 아니면 별도 (양도세 실질 기준)
     if tax_kind == "양도세" and not (lives_together and shares_livelihood):
+        # 2026-10-11 판례 회귀 보정(findings #40, 서면5팀-862): 배우자 없는 자녀가 영 §152의3 각 호를 못 채우면 독립 1세대가 될 수 없어
+        # 주소를 분리해도 부모와 동일세대(소법 §88 6호 단서). 나이 정보가 없으면 종전대로 판정한다.
+        if relationship == "직계비속" and (age is not None or is_minor) and not is_married_or_was:
+            ok, why = _sec152_3(age, is_minor, is_married_or_was, income_over_40pct_median)
+            if not ok:
+                citations.append(_cite("배우자 없는 자녀가 영 §152의3 각 호 미충족 — 독립 1세대 불가, 주소를 분리해도 부모와 동일세대 (" + why + ")",
+                                       "소법 §88 6호 단서 · 영 §152의3", "A"))
+                return {"동일세대": True, "분리가능": False, "분리조건": why, "근거": citations, "플래그": flags}
         citations.append(_cite("동일 주소에서 생계를 같이하지 않는 가족 — 별도 세대 (취학·요양·근무상 일시퇴거는 포함이므로 확인)",
                                "소법 §88 6호", "A"))
         flags.append("'생계를 같이' 판단은 실질 — 분쟁 최다 지점(해석례 1,376건). 별도 세대 주장 시 독립 생계 증빙 권장")
@@ -643,18 +668,9 @@ def judge_same_household(relationship: str, lives_together: bool = True,
                 "분리조건": "세대별 주민등록표 분리", "근거": citations, "플래그": flags}
 
     # 3) 동거 중인 가족의 세대분리 가능성 (영 §152의3)
-    can_separate, why = False, None
-    if is_minor:
-        why = "미성년자 — 결혼·가족 사망 등 불가피 사유 외 분리 불가"
-    elif age is not None and age >= 30:
-        can_separate, why = True, "30세 이상 — 분리 가능 (영 §152의3 1호)"
-    elif is_married_or_was:
-        can_separate, why = True, "혼인(또는 이혼·사별) — 분리 가능 (영 §152의3 2호)"
-    elif income_over_40pct_median:
-        can_separate, why = True, "기준 중위소득 40% 이상 + 독립 생계·주거 유지 — 분리 가능 (영 §152의3 3호)"
+    can_separate, why = _sec152_3(age, is_minor, is_married_or_was, income_over_40pct_median)
+    if can_separate and "3호" in why:
         flags.append("소득 측정기간은 법령 명문 없음 — 직전 확정 과세기간을 프록시로 쓰는 실무관행(F급). 취득세는 '직전 12개월' 명문 — 세목 분기")
-    else:
-        why = "30세 미만·미혼·소득요건 미충족 — 주소 분리해도 동일 세대로 봄"
     citations.append(_cite(why, "소득세법 시행령 §152의3", "B"))
     return {"동일세대": True, "분리가능": can_separate, "분리조건": why, "근거": citations, "플래그": flags}
 
@@ -800,7 +816,12 @@ def judge_temporary_two_homes(prev_acquired: str, new_acquired: str,
                               new_home_tenant_lease_end: str | None = None,
                               new_contract_date: str | None = None,
                               other_homes_at_acquisition: int = 0,
-                              prev_adjusted_after_new_contract: bool = False) -> dict:
+                              prev_adjusted_after_new_contract: bool = False,
+                              merged_homes_at_acquisition: int = 0,
+                              merge_kind: str | None = None,
+                              merge_date: str | None = None,
+                              other_homes_at_sale: int = 0,
+                              new_right_acquired: str | None = None) -> dict:
     """§155① 일시적 2주택 특례 판정 (노드 §155 계열·사례③, 심판례 회귀셋 cases_155_1.json).
 
     other_homes_at_acquisition: 신규주택 취득 당시 종전주택 외 추가 보유 주택수 — §155①은
@@ -819,12 +840,57 @@ def judge_temporary_two_homes(prev_acquired: str, new_acquired: str,
     전입·양도 기한은 신규주택에 전소유자와의 임대차가 남아 있고 그 종료일이 취득일+1년 후이면
     임대차 종료일까지 연장(취득일부터 최대 2년, 취득 후 갱신계약은 불인정 — 구 §155①2호 단서).
     날짜는 YYYY-MM-DD. prev_sale_date 미정이면 현행법(3년) 기준 데드라인만 계산.
+
+    merged_homes_at_acquisition·merge_kind("혼인"|"동거봉양")·merge_date: other_homes_at_acquisition 중
+    혼인(영 §155⑤)·동거봉양(영 §155④) 합가로 들어온 주택 수. 합가로 2주택이 된 뒤 신규주택을 취득해 일시
+    3주택이 된 경우 합가 특례기간 안이면서 신규 취득일부터 기한 내 양도하는 종전주택은 §155①과 ④·⑤를 중첩
+    적용한다(기재부 재재산-182, 2008.5.16. · 법규과-1289, 2025.6.18.) — 그 수만큼 3주택 배제에서 뺀다.
+    other_homes_at_sale: 양도일 현재 종전·신규 외에 보유한 주택 수(합가분 제외) — §155①은 '일시적으로 2주택이
+    된 경우'의 종전주택 양도라 양도일 현재 3주택 이상이면 배제(조심2010중3600).
+    new_right_acquired: 신규주택이 분양권에 기한 것이면 그 분양권 취득(계약)일. 2021-01-01 이후 취득 분양권은
+    주택 수에 들어가므로(법 §88 10호, 법 17477호 부칙) 종전주택 취득 전에 이미 보유했다면 '1주택 세대가 신규주택
+    취득'한 순서가 아니어서 배제(서면-2021-법규재산-3071 · 부동산납세과-812).
     """
     p, n = date.fromisoformat(prev_acquired), date.fromisoformat(new_acquired)
     s = date.fromisoformat(prev_sale_date) if prev_sale_date else None
     citations, flags = [], []
 
-    if int(other_homes_at_acquisition or 0) > 0:
+    if new_right_acquired:
+        r_acq = date.fromisoformat(new_right_acquired)
+        if r_acq >= RIGHT_COUNT_FROM and r_acq < p:
+            return {
+                "특례충족": False,
+                "사유": f"신규주택 분양권({new_right_acquired}, 2021 이후 취득 — 주택 수 산입)을 종전주택 취득"
+                      f"({prev_acquired}) 전에 이미 보유 — '1주택 세대가 신규주택을 취득해 일시적 2주택' 순서 아님",
+                "근거": [_cite("2021.1.1. 이후 취득 분양권은 주택 수에 포함 — 분양권→주택 순서면 §155① 불가",
+                             "소득세법 §88 10호·법 17477호 부칙 · 영 §155① · 서면-2021-법규재산-3071", "B")],
+                "플래그": ["§156의3②·③(1주택+1분양권)도 '1주택 세대가 분양권 취득' 전제라 같은 순서에선 적용 안 됨"],
+            }
+
+    merged_ok = 0
+    if int(merged_homes_at_acquisition or 0) > 0 and merge_kind in ("혼인", "동거봉양") and merge_date:
+        md = date.fromisoformat(merge_date)
+        m_years, m_basis = _r155_period(merge_kind, s)
+        m_dead = _add_years(md, m_years)
+        if md <= n and (s is None or s <= m_dead):
+            merged_ok = int(merged_homes_at_acquisition)
+            citations.append(_cite(
+                f"{merge_kind} 합가({merge_date})로 들어온 {merged_ok}주택 — 합가 특례기간({m_years}년, ~{m_dead.isoformat()}) "
+                "안 양도라 §155①과 중첩 적용", f"{m_basis} · 재재산-182(2008.5.16.)·법규과-1289(2025.6.18.)", "B"))
+        else:
+            flags.append(f"{merge_kind} 합가 주택 중첩 불가 — 합가일이 신규 취득 후이거나 합가 특례기간({m_years}년) 경과")
+
+    excess_sale = int(other_homes_at_sale or 0)
+    if excess_sale > 0:
+        return {
+            "특례충족": False,
+            "사유": f"양도일 현재 종전·신규 외 {excess_sale}주택 추가 보유 — '일시적으로 2주택이 된 경우'가 아님",
+            "근거": [_cite("§155①은 일시적 2주택 상태의 종전주택 양도 — 신규 취득 후 매매로 3주택이 되면 배제",
+                         "영 §155① · 조심2010중3600", "B")],
+            "플래그": ["합가·상속 등 다른 특례로 주택 수에서 빠지는 주택은 other_homes_at_sale 에서 제외하고 넣는다"],
+        }
+
+    if int(other_homes_at_acquisition or 0) - merged_ok > 0:
         return {
             "특례충족": False,
             "사유": f"신규주택 취득 당시 종전주택 외 {other_homes_at_acquisition}주택 추가 보유 — "

@@ -58,14 +58,16 @@ Each row compares the statute-node engine against the legacy calculator/judge (o
 | 조특법 기타 6(비양도·비부동산 특례) | 조문표 | 조특 기타 6 | 283 | 0 |  |
 | 조특법 기타 7(비양도·비부동산 특례) | 조문표 | 조특 기타 7 | 241 | 0 |  |
 | 조특법 기타 8(비양도·비부동산 특례) | 조문표 | 조특 기타 8 | 224 | 0 |  |
+| 판례 회귀(조세심판원·대법원·국세청 예규·행안부 해석·국세상담) | 판례 결론 — data/verification/node_cases/ | 판례 회귀 | 626 | 0 |  |
 | 재산세 토지구분·비사업용 토지·중과 제외·조특법 잔여 | 조문표 / count_heavy_homes / judge_second_home_exclusion | 중과 제외·HH 회귀 | 7 | 0 |  |
 | 재산세 토지구분·비사업용 토지·중과 제외·조특법 잔여 | 조문표 / count_heavy_homes / judge_second_home_exclusion | 조특법 잔여·RH 회귀 | 8 | 0 |  |
 
-합계 / total: **11,651건, 불일치 0**
+합계 / total: **12,277건, 불일치 0**
 
 ## 읽는 법 / how to read
 
 - 불일치 0은 '노드가 기존 구현과 같다'는 뜻이지 '법이 맞다'는 뜻이 아니다. 기존 구현의 결함은 노드 전환 과정에서 발견되면 고치고 `data/verification/findings.jsonl`에 남긴다.
 - 1원 반올림차는 정수 절사 순서 차이다. 세액 판정에 영향이 없어 불일치로 세지 않는다.
 - 조문표 대조는 판정기가 없는 조문을 법문의 수치(세율표·한도·기간)로 손계산한 기대치와 맞춘 것이다.
+- 판례 회귀는 판례·심판례·예규의 사실관계를 노드 입력으로, 결론을 기대값으로 옮긴 것이다(`docs/RULING_CASES.md`). 구법·사실판단 등으로 대조할 수 없는 판례는 비활성으로 기록만 한다. 이 행만이 '법 해석이 권한 있는 기관의 결론과 같다'는 검증이다.
 - A mismatch count of 0 means the nodes reproduce the legacy implementation, not that the law is interpreted correctly. Legacy defects found while converting are fixed and logged in `data/verification/findings.jsonl`.
