@@ -1,0 +1,15 @@
+.git
+.env
+.env.*
+!.env.example
+__pycache__
+*.pyc
+.pytest_cache
+.venv
+dist
+build
+*.egg-info
+logs
+data/tax_cases.db
+data/rulings
+data/law_cache

@@ -1,0 +1,23 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "budongsan-tax",
+  "version": "0.1.0",
+  "description": "Calculate Korean real-estate taxes and check statutory conditions using explicit user-provided facts.",
+  "repository": "https://github.com/taylee9809/budongsan-tax",
+  "license": "AGPL-3.0-or-later",
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Budongsan Tax",
+        "shortDescription": "Korean real-estate tax tools",
+        "longDescription": "Calculate acquisition, property, holding, transfer, gift and inheritance taxes and check related conditions under Korean law. Results depend on the supplied facts and supported tax years. Shows the calculation details and available statutory sources. Does not file returns, access tax accounts, or replace professional review. Live law lookup is available only when the operator configures it.",
+        "category": "Productivity",
+        "logo": "./assets/icon.svg",
+        "composerIcon": "./assets/icon.svg",
+        "defaultPrompt": ["취득세 계산에 필요한 정보를 알려줘", "부모에게 부동산을 증여받으면 어떤 정보가 필요해?", "재산세 계산 조건을 확인해줘"]
+      },
+      "review": {"commerce": false, "commerce_description": "No purchases, subscriptions, payments or tax filing tools are provided by this plugin."},
+      "publication": {"countries": ["KR"], "release_notes": "Initial Korean real-estate tax calculation and condition-checking integration."}
+    }
+  }
+}
