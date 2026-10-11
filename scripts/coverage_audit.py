@@ -284,7 +284,8 @@ def main():
                     if a["장"].startswith(c) or a["절"].startswith(c)]
             if not excl and name.startswith(("지방세법", "지방세특례제한법")):
                 excl = ["비부동산:" + k for k in OUT_OF_SCOPE_TITLE_KW if k in a["조문제목"]][:1]
-            if not excl and name in IN_SCOPE_ARTICLES and key not in covered:
+            # 2026-10-11 조특법 비양도 조문까지 노드화(jotuk_gita_1~8) — 범위밖 표시 해제. 빈 칸이 있으면 미착수로 드러나게 한다.
+            if False and not excl and name in IN_SCOPE_ARTICLES and key not in covered:
                 _k = "%d%s" % (a["조문번호"], ("의%d" % a["가지번호"]) if a["가지번호"] else "")
                 if _k not in IN_SCOPE_ARTICLES[name]:
                     excl = ["비양도·비부동산: 법인세·소득세·간접세 특례"]
