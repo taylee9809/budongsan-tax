@@ -6,12 +6,12 @@
     "url": "https://github.com/taylee9809/budongsan-tax",
     "source": "github"
   },
-  "version": "0.1.1",
+  "version": "0.1.0",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "budongsan-tax",
-      "version": "0.1.1",
+      "version": "0.1.0",
       "transport": {
         "type": "stdio"
       },
