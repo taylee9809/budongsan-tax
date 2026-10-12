@@ -5,7 +5,7 @@ from html import escape
 EFFECTIVE_DATE = "2026-10-13"
 SUPPORT_NAME = "Budongsan Tax 고객지원"
 # 문의 메일은 배포 환경변수로 바꾼다(코드 재배포 없이 Cloud Run 설정만 갱신).
-CONTACT = os.environ.get("SUPPORT_EMAIL", "taylee9809@gmail.com")
+CONTACT = os.environ.get("SUPPORT_EMAIL", "budongsantax.inquiry@gmail.com")
 
 PRIVACY = [
     ("개요",
