@@ -2060,13 +2060,22 @@ def main() -> None:
 
     기본은 stdio. 환경변수 MCP_TRANSPORT=streamable-http 이면 HTTP 서버로 뜬다(원격 커넥터용):
     HOST(기본 0.0.0.0)·PORT(기본 8000)·MCP_PATH(기본 /mcp). 인증은 없으니 공개 배포 시 앞단에서 처리한다.
+    MCP_ALLOWED_HOSTS(쉼표 구분)를 주면 그 Host 헤더만 받는다. 없으면 Host 검사를 끈다 —
+    FastMCP 기본값은 localhost만 허용해 Cloud Run 등 공개 주소에서 421을 낸다.
     """
     transport = os.environ.get("MCP_TRANSPORT", "stdio")
     if transport == "streamable-http":
+        from mcp.server.transport_security import TransportSecuritySettings
+
         mcp.settings.host = os.environ.get("HOST", "0.0.0.0")
         mcp.settings.port = int(os.environ.get("PORT", "8000"))
         mcp.settings.streamable_http_path = os.environ.get("MCP_PATH", "/mcp")
         mcp.settings.stateless_http = True
+        allowed = [h.strip() for h in os.environ.get("MCP_ALLOWED_HOSTS", "").split(",") if h.strip()]
+        mcp.settings.transport_security = TransportSecuritySettings(
+            enable_dns_rebinding_protection=bool(allowed),
+            allowed_hosts=allowed,
+        )
         mcp.run(transport="streamable-http")
     else:
         mcp.run()
