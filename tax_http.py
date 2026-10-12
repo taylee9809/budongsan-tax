@@ -36,6 +36,9 @@ def make_server():
         "Distinguish user assumptions, statutory eligibility and arithmetic. "
         "Return the actual tool result with its limitations and citations. "
         "Do not claim to file returns, access Hometax accounts, or guarantee tax outcomes. "
+        "If the user has not given the price and other material facts, ask for them first and do not "
+        "call a calc_* tool with invented or illustrative values unless the user explicitly asks for an example. "
+        "These tools cover Korean tax law only: for other jurisdictions, say so and do not call any tool. "
         "Only use tools present in tools/list."
     )
     server = FastMCP(
