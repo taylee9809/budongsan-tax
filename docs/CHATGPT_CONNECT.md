@@ -1,6 +1,6 @@
 # 내 ChatGPT에 연결하기
 
-현재 배포 주소: https://budongsan-tax-preview.onrender.com
+현재 배포 주소: https://budongsan-tax-793377969551.asia-northeast3.run.app
 
 ## 입력할 값
 
@@ -8,12 +8,12 @@
 | --- | --- |
 | 이름 | Budongsan Tax |
 | 설명 | 한국 부동산 세금 계산 및 요건 판정 도구 |
-| MCP URL | `https://budongsan-tax-preview.onrender.com/mcp` |
+| MCP URL | `https://budongsan-tax-793377969551.asia-northeast3.run.app/mcp` |
 | 인증 | None / 인증 없음 |
 
 1. https://chatgpt.com/plugins 에서 `+` → **Add custom MCP server**를 선택한다.
 2. 위 값을 입력하고 표시된 연결 안내를 확인한다.
-3. **Create as a plugin**을 누르고 도구 목록을 확인한다. 현재 LAW_OC 미설정 기준 39개다.
+3. **Create as a plugin**을 누르고 도구 목록을 확인한다. LAW_OC 설정 기준 43개다(법령·해석례·조례 조회 포함).
 4. 생성된 플러그인을 설치한다.
 5. 새 대화에서 `@`로 **Budongsan Tax**를 선택한 다음 아래 예시를 보낸다.
 
