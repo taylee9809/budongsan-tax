@@ -69,6 +69,17 @@ def get_row(key, year):
     years = row.get("검증연도") or []
     if year in years:
         return row
+    # 연도별 변형 행 '<키>@YYYY-YYYY' (2026-10-13) — 값이 다른 과거 연도는 같은 키에 검증연도만 늘리지 않고
+    # 별도 행으로 둔다(미검증_잔여 정책). 호출자는 본 키 이름 그대로 부르면 된다.
+    for k, r in table.items():
+        if not k.startswith(key + "@"):
+            continue
+        try:
+            a, b = (int(x) for x in k.split("@", 1)[1].split("-"))
+        except ValueError:
+            continue
+        if a <= year <= b and year in (r.get("검증연도") or []):
+            return r
     # 미래 연도는 원리적으로 검증할 수 없다(그 해 법령이 아직 없다). 그렇다고 미래
     # 시나리오 계산을 막으면 상담이 성립하지 않으므로, '현행유지' 표시가 있는 행에
     # 한해 현행값을 쓰되 추정임을 결과에 드러낸다. 과거 미검증 연도는 그대로 거부한다
@@ -88,14 +99,12 @@ def get_param(key, year):
 
 
 def sangjeung_filing_credit_rate(year):
-    """상증세법 §69 신고세액공제율 — 2016~2018은 연혁 키(10%·7%·부칙 15224호 §8의 5%), 그 밖은 현행 키(3%)."""
-    if 2016 <= year <= 2018:
-        return get_param("상증세.신고세액공제율.2016_2018", year)[str(year)]
+    """상증세법 §69 신고세액공제율 — 2016 10%·2017 7%·2018 5%(부칙 15224호 §8)는 변형 행(@연도), 2019~ 3%."""
     return get_param("상증세.신고세액공제율", year)
 
 
 def sangjeung_filing_credit_cite(year):
-    return cite("상증세.신고세액공제율.2016_2018" if 2016 <= year <= 2018 else "상증세.신고세액공제율", year)
+    return cite("상증세.신고세액공제율", year)
 
 
 def get_brackets(key, year):
