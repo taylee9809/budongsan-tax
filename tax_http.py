@@ -8,7 +8,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from starlette.responses import HTMLResponse, JSONResponse, PlainTextResponse
 
 import tax_server
-from policy_pages import PRIVACY_HTML, TERMS_HTML
+from policy_pages import CONTACT, PRIVACY_HTML, SUPPORT_NAME, TERMS_HTML
 
 REMOTE_TOOLS = {"search_law", "get_law_detail", "get_local_tax_ordinances", "search_tax_rulings"}
 
@@ -55,7 +55,7 @@ def make_server():
         return PlainTextResponse(
             "Budongsan Tax\nKorean real-estate tax calculations and statutory condition checks.\n"
             "MCP endpoint: /mcp\nSource and support: https://github.com/taylee9809/budongsan-tax\n"
-            "운영자: 이태연\n고객지원: taylee9809@gmail.com\n지원 안내: /support\n"
+            f"고객지원: {CONTACT}\n지원 안내: /support\n"
             "개인정보처리방침: /privacy\n이용약관: /terms\n"
             "Calculations depend on supplied facts and the supported tax year. No tax filing service.\n"
         )
@@ -64,7 +64,7 @@ def make_server():
     async def support(request):
         return PlainTextResponse(
             "Budongsan Tax 고객지원\n\n"
-            "운영자: 이태연\n이메일: taylee9809@gmail.com\n\n"
+            f"{SUPPORT_NAME}\n이메일: {CONTACT}\n\n"
             "연결 오류·계산 결과 문의는 발생 시각, 도구 이름, 재현 가능한 가상 예시를 보내주세요.\n"
             "주민등록번호, 계정 비밀번호, 실제 고객의 계약서 등은 보내지 마세요.\n"
             "이 서비스는 한국 부동산 세금의 계산과 요건 판정을 지원합니다.\n"

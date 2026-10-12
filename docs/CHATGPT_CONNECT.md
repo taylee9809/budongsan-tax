@@ -42,7 +42,7 @@
 
 ## 공개 제출에 남은 것
 
-- 게시자: 이태연 / 고객지원: taylee9809@gmail.com (사용자 제공, OpenAI 신원 확인 완료 여부는 미확인).
+- 게시자: OpenAI 본인 인증을 마친 이름을 제출 시점에 입력 / 고객지원: 서비스 전용 메일(Cloud Run 환경변수 SUPPORT_EMAIL).
 - 실제 운영 내용을 반영한 공개 개인정보처리방침·이용약관·소개/지원 페이지.
 - ChatGPT에서 실행한 데모와 대화 검증 결과.
 - 게시자 신원 확인 및 제출 포털의 도메인 확인 절차.
@@ -50,7 +50,7 @@
 
 현재 `plugin/mcp.json`은 실제 연결 주소를 담은 설정 파일이다. 단독 제출 ZIP은 아니다.
 신원 정보·정책·데모 주소가 준비되면 `scripts/build_chatgpt_plugin.py`로 제출 ZIP을 만든다.
-게시자 설정은 `plugin/publisher.json`, 공표 전 정책 초안은 `docs/POLICY_DRAFTS.md`에 있다.
+게시자 설정은 `plugin/publisher.json`, 정책 본문은 `policy_pages.py`(/privacy, /terms)에 있다.
 
 공식 OpenAI 문서 (2026-10-12 확인):
 - https://developers.openai.com/plugins/deploy/connect-chatgpt
