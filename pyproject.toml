@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "budongsan-tax"
-version = "0.1.0"
+version = "0.1.1"
 description = "Korean real-estate tax engine and MCP server: statute nodes, official rulings as tests"
 readme = "README.md"
 license = "AGPL-3.0-or-later"
