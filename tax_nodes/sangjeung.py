@@ -471,8 +471,8 @@ def 제69조제1항(ctx):
         ctx.상수근거["신고세액공제_기준차감"] = "§69 1호·2호 차감: %s" % 차감
     if not ctx.사실값("기한내신고", True):
         return {"신고세액공제": 0, "납부세액": 기준}
-    율 = tax_params.get_param("상증세.신고세액공제율", ctx.연도)
-    ctx.상수근거["신고세액공제"] = tax_params.cite("상증세.신고세액공제율", ctx.연도)
+    율 = tax_params.sangjeung_filing_credit_rate(ctx.연도)
+    ctx.상수근거["신고세액공제"] = tax_params.sangjeung_filing_credit_cite(ctx.연도)
     공제기준 = 기준
     신고과표 = ctx.사실값("신고과세표준")
     if 신고과표 is not None:

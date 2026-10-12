@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """korea-realestate 세금 판정·계산 MCP 서버 (공개판).
 
-이 파일은 scripts/extract_tax_server.py 가 server.py(비공개 통합 서버, git 698858d)에서
+이 파일은 scripts/extract_tax_server.py 가 server.py(비공개 통합 서버, git c111d8f)에서
 세금 도구와 그 의존 정의만 AST로 뽑아 생성한 것이다. 손으로 고치지 말고 생성기를 다시 돌린다.
 도구 43개. 법령·재결례 조회 도구는 .env의 LAW_OC(법제처 Open API 키, 무료)가 있을 때만 동작한다.
 """
@@ -1639,6 +1639,44 @@ def _sangjeung_progressive(tax_base: int, year: int) -> tuple[int, float]:
             return max(0, int(tax_base * b["rate"] - b["deduction"])), b["rate"]
     return 0, 0.0
 
+def _attach_sangjeung_penalty(kind: str, year: int, out: dict, penalty: dict | None,
+                              filing_credit_rate: float) -> dict:
+    """penalty(가산세 사실)가 있으면 tax_nodes.sangjeung_gasanse.상증_가산세로 가산세를 붙인다(2026-10-13).
+
+    결정 기준 납부세액: 무신고면 신고세액공제 없이(산출+할증−기납부), 신고했으면 신고세액공제는 신고한 세액 기준
+    (영 §65의2 — 신고세액 = 신고 산출세액 등 × (1−공제율)이므로 공제액 = 신고세액 × 율/(1−율), 이 계산기 공제액이 상한).
+    penalty가 없으면 out을 그대로 돌려준다(종전 출력 불변)."""
+    if not penalty:
+        return out
+    import tax_nodes.sangjeung_gasanse as _sg
+    p = dict(penalty)
+    event_key = "상속개시일" if kind == "상속" else "증여일"
+    성립 = p.pop(event_key, None) or p.pop("납세의무성립일", None)
+    if not 성립:
+        out["가산세"] = None
+        out["가산세_사유"] = "penalty에 %s가 없어 법정신고기한을 정할 수 없습니다" % event_key
+        return out
+    신고세액 = p.pop("신고세액", None)
+    전액 = out["납부세액"] + out["신고세액공제"]                    # 산출+할증−기납부
+    if 신고세액 is None and not p.get("기한내신고"):
+        결정 = 전액
+    else:
+        r = filing_credit_rate
+        공제 = min(out["신고세액공제"], int((신고세액 or 0) * r / (1 - r))) if r < 1 else 0
+        결정 = 전액 - 공제
+    keys = ("기한내신고", "기한내납부세액", "법정신고기한", "납부일", "납부고지일", "지정납부기한", "미납일수", "부정행위",
+            "역외거래", "과소신고사유", "납부지연_제외사유", "결정경정일", "정당한사유", "감면유형", "신고일", "경정예지")
+    kw = {k: p.pop(k) for k in keys if k in p}
+    r = _sg.상증_가산세(연도=year, 세목구분=kind, 납세의무성립일=성립, 산출세액=out["산출세액"] + out.get("세대생략할증", 0),
+                     납부세액=결정, 신고세액=신고세액, 추가사실=p, **kw)
+    합계 = r.get("합계")
+    out["결정기준_납부세액"] = 결정
+    out["가산세"] = 합계
+    out["가산세_내역"] = r.get("항목")
+    out["총부담세액"] = 결정 + (합계 or 0)
+    out["가산세_근거"] = {"법정신고기한": r.get("법정신고기한"), "적용 조문": r.get("적용 조문"), "값 출처": r.get("값 출처")}
+    return out
+
 @mcp.tool(title='Gift tax (증여세)', annotations=ToolAnnotations(title='Gift tax (증여세)', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def calc_gift_tax(
     taxable_value: int,
@@ -1651,6 +1689,7 @@ def calc_gift_tax(
     generation_skip: bool = False,
     over_2b_minor_skip: bool = False,
     filing_credit_rate: float = -1.0,
+    penalty: dict | None = None,
 ) -> dict:
     """Korea gift tax (증여세) on real estate: relationship deductions, marriage/birth deduction, prior gifts, progressive rates.
 
@@ -1667,6 +1706,11 @@ def calc_gift_tax(
 
     ⚠️미지원(플래그로 안내): 이월과세(§97의2 — 수증자가 10년 내 양도 시 양도세 쪽에서 처리),
     저가양수 증여의제(§35), 창업자금·가업승계 특례세율.
+
+    penalty(선택, 2026-10-13): 가산세를 함께 계산할 사실 dict — {"증여일": "YYYY-MM-DD"(필수), "신고세액": 기한 내 신고한
+    납부세액(없으면 무신고), "기한내납부세액", "납부일", "납부고지일", "지정납부기한", "부정행위", "정당한사유",
+    "감면유형"("수정신고"|"기한후신고"), "신고일", "과소신고사유", "납부지연_제외사유"}. 주면 결과에 '결정기준_납부세액'·
+    '가산세'·'가산세_내역'·'총부담세액'이 붙는다(국세기본법 §47의2~§48·상증법 §67·§78 노드). 안 주면 종전 출력 그대로.
     """
     공제표 = tax_params.get_param("증여세.증여재산공제", year)
     선택지 = [k for k in 공제표 if "." not in k]
@@ -1682,7 +1726,7 @@ def calc_gift_tax(
         marriage = min(marriage_birth_deduction,
                        tax_params.get_param("증여세.혼인출산공제", year)["통합한도"])
     if filing_credit_rate < 0:
-        filing_credit_rate = tax_params.get_param("상증세.신고세액공제율", year)
+        filing_credit_rate = tax_params.sangjeung_filing_credit_rate(year)
 
     # §47② — 10년 내 동일인 증여재산 합계가 1천만원 이상인 경우에만 가산 (같은 날 교정, 종전 무조건 합산)
     total_value = taxable_value + (prior_gifts_10yr if prior_gifts_10yr >= 10_000_000 else 0)
@@ -1697,7 +1741,7 @@ def calc_gift_tax(
     filing_credit = int(after_prior * filing_credit_rate)
     final_tax = after_prior - filing_credit
 
-    return {
+    out = {
         "증여재산공제": deduction, "혼인출산공제": marriage,
         "합산과세가액": total_value, "과세표준": tax_base,
         "산출세액": gross, "적용세율": rate, "세대생략할증": surcharge,
@@ -1718,6 +1762,7 @@ def calc_gift_tax(
             "부동산 증여취득세(시가표준 3.5%, 조정지역 3억↑ 12%)는 별도 — calc_acquisition_tax",
         ],
     }
+    return _attach_sangjeung_penalty("증여", year, out, penalty, filing_credit_rate)
 
 @mcp.tool(title='Inheritance tax (상속세)', annotations=ToolAnnotations(title='Inheritance tax (상속세)', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def calc_inheritance_tax(
@@ -1731,6 +1776,7 @@ def calc_inheritance_tax(
     generation_skip_portion: float = 0.0,
     over_2b_minor_skip: bool = False,
     filing_credit_rate: float = -1.0,
+    penalty: dict | None = None,
 ) -> dict:
     """Korea inheritance tax (상속세): basic, spouse and lump-sum deductions, progressive rates (estate basis).
 
@@ -1746,6 +1792,11 @@ def calc_inheritance_tax(
 
     ⚠️미지원(플래그): 금융재산공제(§22 — 미순회)·가업/영농상속공제·단기재상속 세액공제(§30)·
     상속개시 6개월 내 양도 시 시가 평가 연동. 인적공제 개별 계산 대신 일괄 5억이 기본.
+
+    penalty(선택, 2026-10-13): 가산세를 함께 계산할 사실 dict — {"상속개시일": "YYYY-MM-DD"(필수), "신고세액": 기한 내 신고한
+    납부세액(없으면 무신고), "기한내납부세액", "납부일", "납부고지일", "지정납부기한", "부정행위", "정당한사유",
+    "감면유형"("수정신고"|"기한후신고"), "신고일", "과소신고사유", "납부지연_제외사유"}. 주면 결과에 '결정기준_납부세액'·
+    '가산세'·'가산세_내역'·'총부담세액'이 붙는다(국세기본법 §47의2~§48·상증법 §67·§78 노드). 안 주면 종전 출력 그대로.
     """
     sp = tax_params.get_param("상속세.배우자공제", year)
     lump = tax_params.get_param("상속세.일괄공제", year) if use_lump_sum_deduction else 0
@@ -1757,7 +1808,7 @@ def calc_inheritance_tax(
     cohabit = min(cohabit_house_deduction,
                   tax_params.get_param("상속세.동거주택공제", year)["한도"])
     if filing_credit_rate < 0:
-        filing_credit_rate = tax_params.get_param("상증세.신고세액공제율", year)
+        filing_credit_rate = tax_params.sangjeung_filing_credit_rate(year)
     total_deduction = lump + spouse + cohabit + other_deductions
 
     tax_base = max(0, taxable_value - total_deduction)
@@ -1769,7 +1820,7 @@ def calc_inheritance_tax(
     filing_credit = int((gross + surcharge) * filing_credit_rate)
     final_tax = gross + surcharge - filing_credit
 
-    return {
+    out = {
         "과세연도": year,
         "값 출처": {"세율표": tax_params.cite("상증세.세율표", year),
                  "배우자공제": tax_params.cite("상속세.배우자공제", year),
@@ -1791,6 +1842,7 @@ def calc_inheritance_tax(
             "상속주택은 양도세 §155② 특례·취득세 무주택 상속 특례(0.8%) 별도 검토",
         ],
     }
+    return _attach_sangjeung_penalty("상속", year, out, penalty, filing_credit_rate)
 
 @mcp.tool(title='Search tax rulings', annotations=ToolAnnotations(title='Search tax rulings', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True))
 async def search_tax_rulings(query: str, source: str = "국세청해석", display: int = 10) -> dict:

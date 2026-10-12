@@ -87,6 +87,17 @@ def get_param(key, year):
     return get_row(key, year)["값"]
 
 
+def sangjeung_filing_credit_rate(year):
+    """상증세법 §69 신고세액공제율 — 2016~2018은 연혁 키(10%·7%·부칙 15224호 §8의 5%), 그 밖은 현행 키(3%)."""
+    if 2016 <= year <= 2018:
+        return get_param("상증세.신고세액공제율.2016_2018", year)[str(year)]
+    return get_param("상증세.신고세액공제율", year)
+
+
+def sangjeung_filing_credit_cite(year):
+    return cite("상증세.신고세액공제율.2016_2018" if 2016 <= year <= 2018 else "상증세.신고세액공제율", year)
+
+
 def get_brackets(key, year):
     """누진세율표를 calc_* 가 받는 [{upto, rate, deduction}] 형태로 돌려준다."""
     value = get_param(key, year)
