@@ -5,9 +5,10 @@ from urllib.parse import urlsplit
 import uvicorn
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
-from starlette.responses import JSONResponse, PlainTextResponse
+from starlette.responses import HTMLResponse, JSONResponse, PlainTextResponse
 
 import tax_server
+from policy_pages import PRIVACY_HTML, TERMS_HTML
 
 REMOTE_TOOLS = {"search_law", "get_law_detail", "get_local_tax_ordinances", "search_tax_rulings"}
 
@@ -55,6 +56,7 @@ def make_server():
             "Budongsan Tax\nKorean real-estate tax calculations and statutory condition checks.\n"
             "MCP endpoint: /mcp\nSource and support: https://github.com/taylee9809/budongsan-tax\n"
             "운영자: 이태연\n고객지원: taylee9809@gmail.com\n지원 안내: /support\n"
+            "개인정보처리방침: /privacy\n이용약관: /terms\n"
             "Calculations depend on supplied facts and the supported tax year. No tax filing service.\n"
         )
 
@@ -69,6 +71,14 @@ def make_server():
             "세금 신고·납부를 대행하지 않으며, 결과는 입력 조건과 지원 연도에 따라 달라집니다.\n"
             "소스 코드: https://github.com/taylee9809/budongsan-tax\n"
         )
+
+    @server.custom_route("/privacy", methods=["GET"])
+    async def privacy(request):
+        return HTMLResponse(PRIVACY_HTML)
+
+    @server.custom_route("/terms", methods=["GET"])
+    async def terms(request):
+        return HTMLResponse(TERMS_HTML)
 
     @server.custom_route("/.well-known/openai-apps-challenge", methods=["GET"])
     async def challenge(request):
