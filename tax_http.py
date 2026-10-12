@@ -5,7 +5,9 @@ from urllib.parse import urlsplit
 import uvicorn
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
-from starlette.responses import HTMLResponse, JSONResponse, PlainTextResponse
+from pathlib import Path
+
+from starlette.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 
 import tax_server
 from policy_pages import CONTACT, PRIVACY_HTML, SUPPORT_NAME, TERMS_HTML
@@ -78,6 +80,11 @@ def make_server():
     @server.custom_route("/privacy", methods=["GET"])
     async def privacy(request):
         return HTMLResponse(PRIVACY_HTML)
+
+    @server.custom_route("/demo.mp4", methods=["GET"])
+    async def demo(request):
+        # 심사 제출용 데모 영상(scripts/build_demo_video.py로 생성)
+        return FileResponse(Path(__file__).parent / "plugin/assets/demo.mp4", media_type="video/mp4")
 
     @server.custom_route("/terms", methods=["GET"])
     async def terms(request):
