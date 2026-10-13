@@ -6,24 +6,28 @@ from PIL import Image, ImageDraw
 SIZE = 256
 SS = 4  # 안티앨리어싱용 확대 배율
 S = SIZE * SS / 128  # SVG 좌표(128) → 픽셀
+BG, HOUSE, ACCENT = "#dbeafe", "#1d4ed8", "#f59e0b"
 
 img = Image.new("RGBA", (SIZE * SS, SIZE * SS), (0, 0, 0, 0))
 d = ImageDraw.Draw(img)
-d.rounded_rectangle([0, 0, SIZE * SS - 1, SIZE * SS - 1], radius=int(28 * S), fill="#163b46")
+d.rounded_rectangle([0, 0, SIZE * SS - 1, SIZE * SS - 1], radius=int(28 * S), fill=BG)
 
 
 def line(points, color, width):
     pts = [(x * S, y * S) for x, y in points]
     w = int(width * S)
     d.line(pts, fill=color, width=w, joint="curve")
-    for p in (pts[0], pts[-1]):
+    for p in pts:  # 꺾이는 점까지 둥글게(stroke-linejoin=round)
         d.ellipse([p[0] - w / 2, p[1] - w / 2, p[0] + w / 2, p[1] + w / 2], fill=color)
 
 
-line([(23, 60), (64, 26), (105, 60)], "#f5efe2", 9)
-line([(34, 55), (34, 102), (94, 102), (94, 55)], "#f5efe2", 9)
-line([(53, 77), (75, 77)], "#67d3af", 8)
-line([(64, 66), (64, 88)], "#67d3af", 8)
+line([(23, 60), (64, 26), (105, 60)], HOUSE, 10)
+line([(34, 55), (34, 100), (94, 100), (94, 55)], HOUSE, 10)
+d.ellipse([86 * S, 28 * S, 98 * S, 40 * S], fill=ACCENT)
+# ₩: W 한 획 + 가로줄 두 개(글꼴 대신 선으로 그려 SVG와 똑같이 맞춘다)
+line([(50, 64), (56, 88), (64, 68), (72, 88), (78, 64)], ACCENT, 5)
+line([(47, 73), (81, 73)], ACCENT, 5)
+line([(47, 80), (81, 80)], ACCENT, 5)
 
 out = Path(__file__).resolve().parents[1] / "plugin/assets/icon.png"
 img.resize((SIZE, SIZE), Image.LANCZOS).quantize(colors=32).save(out, optimize=True)

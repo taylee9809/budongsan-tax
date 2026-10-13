@@ -44,7 +44,7 @@ def font(size, bold=True):
 
 
 def card(lines):
-    img = Image.new("RGB", (W, H), "#163b46")
+    img = Image.new("RGB", (W, H), "#1d4ed8")
     d = ImageDraw.Draw(img)
     icon = Path(__file__).resolve().parents[1] / "plugin/assets/icon.png"
     if icon.exists():
@@ -54,7 +54,7 @@ def card(lines):
     for text, size in lines:
         f = font(size)
         w = d.textlength(text, font=f)
-        d.text(((W - w) / 2, y), text, font=f, fill="#f5efe2")
+        d.text(((W - w) / 2, y), text, font=f, fill="#ffffff")
         y += size + 40
     return img
 
@@ -67,9 +67,9 @@ def frame(src, en, ko):
     canvas.paste(shot.crop((0, 0, W, min(h, shot.height))), (0, 0))
     if en:
         d = ImageDraw.Draw(canvas)
-        d.rectangle([0, H - BAR, W, H], fill="#163b46")
-        d.text((40, H - BAR + 22), en, font=font(40), fill="#f5efe2")
-        d.text((40, H - BAR + 82), ko, font=font(34, bold=False), fill="#67d3af")
+        d.rectangle([0, H - BAR, W, H], fill="#1d4ed8")
+        d.text((40, H - BAR + 22), en, font=font(40), fill="#ffffff")
+        d.text((40, H - BAR + 82), ko, font=font(34, bold=False), fill="#fde68a")
     return canvas
 
 
