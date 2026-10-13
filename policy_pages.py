@@ -4,6 +4,8 @@ from html import escape
 
 EFFECTIVE_DATE = "2026-10-13"
 SUPPORT_NAME = "Budongsan Tax 고객지원"
+# OpenAI 본인 인증을 마친 게시자 이름. 공개 정책 페이지는 제출 게시자와 같아야 한다(심사 요건).
+OPERATOR = "이태연"
 # 문의 메일은 배포 환경변수로 바꾼다(코드 재배포 없이 Cloud Run 설정만 갱신).
 CONTACT = os.environ.get("SUPPORT_EMAIL", "budongsantax.inquiry@gmail.com")
 
@@ -38,14 +40,14 @@ PRIVACY = [
      [f"개인정보의 열람·정정·삭제·처리정지를 {CONTACT}로 요청할 수 있습니다. "
       "서비스가 실제로 보관하는 정보는 위 접속·오류 기록과 문의 이메일뿐이며, 확인 후 지체 없이 처리합니다."]),
     ("개인정보 보호책임자",
-     [f"{SUPPORT_NAME} · {CONTACT}"]),
+     [f"운영자 {OPERATOR} · {CONTACT}"]),
     ("변경",
      [f"이 방침은 {EFFECTIVE_DATE}부터 적용됩니다. 내용이 바뀌면 이 페이지에 시행일과 함께 게시합니다."]),
 ]
 
 TERMS = [
     ("서비스",
-     ["Budongsan Tax는 이용자가 제공한 사실과 지원 연도의 세법 규칙에 따라 "
+     [f"Budongsan Tax(운영자 {OPERATOR})는 이용자가 제공한 사실과 지원 연도의 세법 규칙에 따라 "
       "한국 부동산 관련 세금(취득세·재산세·종합부동산세·양도소득세·증여세·상속세 등)을 계산하고 "
       "관련 요건을 판정합니다. 이용료는 없습니다.",
       "세금 신고·납부 대행, 홈택스 등 계정 접속, 세무 대리는 하지 않습니다."]),
