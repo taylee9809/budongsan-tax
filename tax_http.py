@@ -10,6 +10,7 @@ from pathlib import Path
 from starlette.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 
 import tax_server
+from hosted_descriptions import DESCRIPTIONS
 from policy_pages import CONTACT, PRIVACY_HTML, SUPPORT_NAME, TERMS_HTML
 
 REMOTE_TOOLS = {"search_law", "get_law_detail", "get_local_tax_ordinances", "search_tax_rulings"}
@@ -32,6 +33,9 @@ def make_server():
     # Use a separate manager so the generated stdio server keeps all its tools.
     source_tools = tax_server.mcp._tool_manager.list_tools()
     enabled = [t for t in source_tools if tax_server.LAW_OC or t.name not in REMOTE_TOOLS]
+    # Directory review: descriptions say what a tool does, never which tool to call next.
+    enabled = [t.model_copy(update={"description": DESCRIPTIONS[t.name]}) if t.name in DESCRIPTIONS else t
+               for t in enabled]
     instructions = tax_server.SERVER_INSTRUCTIONS + (
         " Ask for missing material facts, including transaction date, household home count, "
         "area and relief conditions; never treat omitted values as confirmed zero or false. "
