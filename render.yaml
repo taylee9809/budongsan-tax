@@ -1,0 +1,12 @@
+# Trial deployment only. Render free instances sleep and are not production hosting.
+services:
+  - type: web
+    name: budongsan-tax-preview
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile.chatgpt
+    healthCheckPath: /healthz
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: HOST
+        value: 0.0.0.0

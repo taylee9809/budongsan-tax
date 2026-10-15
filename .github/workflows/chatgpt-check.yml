@@ -1,0 +1,24 @@
+name: ChatGPT HTTP checks
+on:
+  push:
+    branches: [main, feat/chatgpt-deployment]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  http:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install . 'mcp>=1.26,<2' pytest
+      - run: python scripts/check_chatgpt_http.py
+      - run: python -m pytest tests -q
+      - name: Build the deployment image
+        run: docker build -f Dockerfile.chatgpt -t budongsan-tax-chatgpt .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chatgpt-http-check
+          path: dist/chatgpt-http-check.json

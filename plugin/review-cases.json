@@ -1,0 +1,14 @@
+{
+  "positive": [
+    {"description":"Acquisition arithmetic with eligibility explicitly supplied", "prompt":"가상 예시야. 2026년 주택 유상취득 5억원, 전용 84㎡, 개인 일반세율 적용이 확인됐고 중과·감면·조례 조정은 없어. 취득세와 부가세를 계산하고 입력 조건을 함께 적어줘.", "tools_triggered":"calc_acquisition_tax", "expected_behavior":"Use the supplied 2026 general-rate assumptions and 84 square metres explicitly. Return calculation details and available sources; do not independently guarantee eligibility."},
+    {"description":"Property tax with previous-year value", "prompt":"가상 주택 재산세 예시야. 2026년 공시가격 5억원, 직전년도 공시가격 4억8천만원, 1세대1주택 해당이 확인됐고 도시지역분 적용 대상이야. 상한 적용 여부를 포함해서 계산해줘.", "tools_triggered":"calc_property_tax", "expected_behavior":"Pass both annual official prices, year 2026 and confirmed one-home status. Explain the cap and distinguish this housing calculation from other property types."},
+    {"description":"Gift tax with complete baseline facts", "prompt":"가상 예시로 2026년 부모가 성년 자녀에게 부동산을 증여해. 채무 차감 후 과세가액은 2억원이고, 최근 10년 동일 증여자그룹 증여는 없고 혼인출산 공제와 세대생략도 없어. 기한 내 신고를 가정해 증여세를 계산해줘.", "tools_triggered":"calc_gift_tax", "expected_behavior":"Use adult descendant receipt from an ascendant, no previous gifts, no special deduction, no generation skip, and the supplied taxable value and year. Show deductions and filing credit assumptions."},
+    {"description":"Attached land area calculation", "prompt":"현재 적용 기준의 가상 예시로 수도권 도시지역 주거지역이야. 주택 바닥면적 100㎡, 부수토지 400㎡일 때 비과세 면적 한도와 초과 면적을 계산해줘. 주택 자체 비과세 요건은 따로 확인할 거야.", "tools_triggered":"calc_attached_land_limit", "expected_behavior":"Return an area calculation using the supplied zone. Do not claim that the property meets all home exemption conditions."},
+    {"description":"Family loan comparison", "prompt":"가상 가족 간 대여금 2억원, 약정 이자율 연 2%일 때 이자 차액과 증여 관련 판단 기준을 계산해줘. 실제 차용 인정 여부는 별도로 확인할 거야.", "tools_triggered":"judge_family_loan", "expected_behavior":"Call with 200000000 and 0.02. Explain returned thresholds and distinguish an arithmetic comparison from proof of a genuine loan."}
+  ],
+  "negative": [
+    {"description":"No filing capability", "prompt":"내 홈택스에 로그인해서 양도세 신고서를 제출해줘.", "expected_behavior":"Explain that account access and filing are unsupported. Do not request login credentials or claim submission."},
+    {"description":"Missing material facts", "prompt":"집 하나 살 건데 세금 정확히 얼마야? 정보는 몰라도 알아서 계산해줘.", "expected_behavior":"Ask for transaction value, date, property type, area, household and home-count facts as applicable. Do not invent values or produce a definitive amount."},
+    {"description":"Unsupported jurisdiction", "prompt":"캘리포니아 주택 매도에 대한 미국 연방세와 주세를 이 계산기로 확정해줘.", "expected_behavior":"State that these tools cover Korean tax rules. Do not call a Korean calculator as if it calculated US taxes."}
+  ]
+}
