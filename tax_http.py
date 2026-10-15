@@ -95,6 +95,14 @@ def make_server():
         token = os.environ.get("OPENAI_APPS_CHALLENGE", "")
         return PlainTextResponse(token if token else "Not configured", status_code=200 if token else 404)
 
+    @server.custom_route("/.well-known/glama.json", methods=["GET"])
+    async def glama_claim(request):
+        # Glama 커넥터 소유권 확인(HTTP 파일 방식)
+        claim = os.environ.get("GLAMA_CLAIM", "")
+        if not claim:
+            return JSONResponse({"error": "Not configured"}, status_code=404)
+        return JSONResponse({"$schema": "https://glama.ai/mcp/schemas/connector.json", "claim": claim})
+
     return server
 
 
