@@ -13,6 +13,7 @@ from starlette.responses import FileResponse, HTMLResponse, JSONResponse, PlainT
 import tax_server
 from acquisition_checklist import get_acquisition_tax_checklist
 from hosted_descriptions import DESCRIPTIONS
+from scenario_coverage import get_tax_scenario_checklist
 from policy_pages import CONTACT, PRIVACY_HTML, SUPPORT_NAME, TERMS_HTML
 from usage_log import UsageLogMiddleware
 
@@ -57,6 +58,14 @@ def make_server():
         "then ask only for the missing items, in everyday language, a few at a time, saying briefly why each matters. "
         "Do not ask for items whose condition does not apply."
     )
+    instructions += (
+        " Questions that span several taxes or stages (buying through a corporation, auction or short-term flips, "
+        "repeated trading, gift then sale, a full buy-hold-sell plan) easily miss a tax. For those, call "
+        "get_tax_scenario_checklist first with the taxpayer type, assets, stages and context, and cover every item "
+        "it returns. Compute items marked 엔진 or 부분 with the tools; for items marked 범위밖, give the statute cited "
+        "and say this connector does not compute them and they need checking against the statute or with a tax "
+        "professional, instead of filling in rates or names from memory."
+    )
     server = FastMCP(
         "budongsan-tax", instructions=instructions, tools=enabled,
         host=os.environ.get("HOST", "127.0.0.1"),
@@ -70,6 +79,13 @@ def make_server():
         get_acquisition_tax_checklist,
         title="Acquisition tax checklist",
         annotations=ToolAnnotations(title="Acquisition tax checklist", readOnlyHint=True, destructiveHint=False,
+                                    idempotentHint=True, openWorldHint=False),
+    )
+
+    server.add_tool(
+        get_tax_scenario_checklist,
+        title="Tax scenario checklist",
+        annotations=ToolAnnotations(title="Tax scenario checklist", readOnlyHint=True, destructiveHint=False,
                                     idempotentHint=True, openWorldHint=False),
     )
 

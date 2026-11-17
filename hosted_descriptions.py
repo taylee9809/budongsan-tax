@@ -86,6 +86,23 @@ Args:
 Returns:
     적용세율, 취득세, 지방교육세, 농어촌특별세, 총납부세액과 근거 조문""",
 
+    "judge_acquisition_homes_and_rate": """Count homes for acquisition tax and decide the rate (1~3/8/12%), temporary two-home relief, corporate rules and the low-price home exception.
+
+취득세 주택수 산정 + 일시적 2주택 + 세율·부가세 실효율 판정
+(지방세법 §13의2·§151, 영 §28의2~6, 농특세법 §5).
+
+homes: 취득 주택 포함 세대(법인이면 법인) 보유 목록. 각 원소 {"종류": 주택|조합원입주권|주택분양권|오피스텔|부속토지, "시가표준액": 원, "수도권": bool, "정비구역": bool, "상속개시_5년내": bool, "혼전분양권_배우자혼전주택": bool, "전용면적": ㎡, "취득당시가액": 원, "신축최초유상승계일": "YYYY-MM-DD", "라벨": str, "취득대상": bool}.
+이번에 취득하는 주택 하나에 "취득대상": true를 표시한다. 그 주택이 저가주택(시가표준액 수도권 1억 이하, 비수도권 2억 이하 — 2025-01-02 이후 취득분, 정비구역 제외)이면 영 §28의2 1호에 따라 법인·다주택이어도 중과하지 않는다. 표시가 없으면 이 예외는 판정하지 않고 플래그로만 알린다.
+
+acquire_date: 취득일 YYYY-MM-DD. 비수도권 저가주택 기준(1억↔2억, 영 35477호 부칙 §2)과 일시적 2주택 3년 기산에 쓰인다.
+
+주택수에서 자동 제외: 저가주택·오피스텔 1억 이하·1억 이하 부속토지(⑥5호)·1.10대책 소형 오피스텔(⑥8·9호)·상속 5년·혼인 완충.
+
+일시적 2주택(영 §28의5)은 양도세 §155①과 별개다 — 1년 경과 요건이 없고 3년이다. 동일 세대원 이전은 처분이 아니고(disposal_to_same_household=true), 상속으로 인한 이전은 처분이다. 임대목적 취득(new_home_for_rental)도 가능하고 신규주택 전입은 요건이 아니다.
+
+is_corporation=true면 법인 12%(§13의2①1호). 대도시 설립 5년 이내 법인의 대도시 부동산 취득 중과(§13②)는 이 판정에 들어 있지 않다.
+is_gift=true면 무상취득 트랙 — 조정대상지역 + gift_std_value 3억 이상이면 12%, 1세대1주택자→배우자·직계존비속이면 제외. 분양권 취득 주택은 권리 취득일 기준으로 목록을 구성한다(영 §28의4① 후단).""",
+
     "judge_transfer_reliefs": """Decide capital gains exemption, heavy-rate exclusions, long-term deduction rate and high-value apportionment ratio.
 
 양도세 비과세·중과·장기보유특별공제·고가주택 안분을 판정한다.

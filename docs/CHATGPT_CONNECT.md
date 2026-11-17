@@ -32,7 +32,7 @@
 
 2026-10-12 00:42 KST 공개 HTTPS 검증:
 
-- `/healthz`: HTTP 200, `status=ok`, `tools=40`, `law_lookup=false`.
+- `/healthz`: HTTP 200, `status=ok`, `tools=41`, `law_lookup=false`.
 - MCP 초기화와 도구 목록 조회 성공.
 - 취득세, 재산세, 증여세, 부수토지 면적, 가족 간 대여금 예시 호출 성공.
 - 음수 취득가액 입력 거부 확인.

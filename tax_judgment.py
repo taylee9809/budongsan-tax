@@ -199,8 +199,13 @@ def judge_acquisition_rate(counted_homes_including_new: int, in_adjusted_area: b
                            exclusive_area_m2: float | None = None,
                            is_gift: bool = False, gift_std_value: int = 0,
                            gift_from_one_home_household_to_family: bool = False,
-                           temporary_two_homes: bool | None = None) -> dict:
+                           temporary_two_homes: bool | None = None,
+                           acquired_low_price_note: str | None = None) -> dict:
     """취득세 세율 + 부가세 2종 실효율 판정 (지방세법 §13의2·§151, 농특세법 §5 — 노드 N13-2-1·N-LT151-2·N-NT5-6).
+
+    acquired_low_price_note: 이번에 취득하는 주택 자체가 영 §28의2 1호 저가주택이면 그 사유 문자열.
+      영 §28의2는 법 §13의2① 전체(1호 법인 포함)의 '중과세 대상으로 보지 않는' 주택이라,
+      주택수·법인 여부와 무관하게 §11①8호 일반세율로 간다(유상취득 한정 — 무상은 §13의2② 별도 트랙).
 
     counted_homes_including_new: 취득 주택 포함 산입 주택수 (count_acquisition_homes 출력 + 1 아님 — 포함해서 전달)
     is_gift: 무상취득(증여) — 조정대상지역 + 시가표준액 3억 이상이면 12% 중과
@@ -242,6 +247,20 @@ def judge_acquisition_rate(counted_homes_including_new: int, in_adjusted_area: b
             "근거": [_cite("일시적 2주택은 §13의2①2호 중과 대상에서 제외", "지방세법 §13의2①2호 괄호·영 §28의5", "A")],
             "플래그": ["3년 내 종전 주택등 미처분 시 중과세율로 추징 — 사후관리 대상"],
         }
+    if acquired_low_price_note:
+        excluded_rural = exclusive_area_m2 is not None and exclusive_area_m2 <= 85
+        return {
+            "판정": "중과 제외 — 취득 주택이 저가주택 (영 §28의2 1호)",
+            "취득세율": "1~3% (6~9억 사잇공식은 호출자 계산 — §11①8호)",
+            "중과여부": False,
+            "지방교육세율(과표대비)": "취득세율×50%×20% (0.1~0.3%)",
+            "농특세율(과표대비)": 0.0 if excluded_rural else 0.002,
+            "농특세비고": "전용 85㎡ 이하면 0",
+            "근거": [_cite(f"{acquired_low_price_note} — §13의2①(법인·다주택 포함) 중과 대상으로 보지 않는다",
+                           "지방세법 시행령 §28의2 1호 (정비구역·소규모정비 사업시행구역 소재 제외)", "A")],
+            "플래그": (["법인이라도 저가주택 취득은 12% 중과에서 빠진다(조문이 §13의2① 각 호 공통)"]
+                     if is_corporation else []),
+        }
     if is_corporation:
         rate, tier = 0.12, "법인 12% (§13의2①1호)"
     elif in_adjusted_area:
@@ -279,6 +298,34 @@ def judge_acquisition_rate(counted_homes_including_new: int, in_adjusted_area: b
 
 
 
+def _acquired_low_price(homes: list[dict], counting: dict,
+                        acquire_date: str | None) -> tuple[str | None, list[str]]:
+    """이번에 취득하는 주택이 영 §28의2 1호 저가주택인지.
+
+    homes 원소 중 "취득대상": True 로 표시된 주택을 본다. 표시가 없으면 판정하지 않고,
+    저가주택이 목록에 있을 때만 '표시하면 중과가 빠질 수 있다'는 플래그를 돌려준다
+    (어느 것이 이번 취득인지 추측하지 않는다).
+    """
+    acq = date.fromisoformat(acquire_date) if acquire_date else None
+    targets = [h for h in homes if h.get("취득대상")]
+    if len(targets) > 1:
+        return None, ["'취득대상' 표시가 2개 이상 — 저가주택 중과 제외(영 §28의2 1호) 판정 보류"]
+    if targets:
+        h = targets[0]
+        if h.get("종류", "주택") != "주택" or h.get("정비구역"):
+            return None, []
+        std = int(h.get("시가표준액", 0) or 0)
+        limit, label = _acq_low_price_limit(bool(h.get("수도권")), acq)
+        if std and std <= limit:
+            return f"취득 주택 시가표준액 {std:,}원 ≤ {label}", []
+        return None, []
+    lows = [d for d in counting["항목별"] if (d["사유"] or "").startswith("저가주택")]
+    if lows:
+        return None, ["목록에 저가주택이 있다 — 그 주택이 이번 취득분이면 중과 대상이 아니다(영 §28의2 1호). "
+                      "homes에서 이번 취득 주택에 \"취득대상\": true 를 표시하면 판정한다"]
+    return None, []
+
+
 def judge_acquisition_homes_and_rate(
         homes: list[dict], in_adjusted_area: bool,
         is_corporation: bool = False, exclusive_area_m2: float | None = None,
@@ -294,6 +341,9 @@ def judge_acquisition_homes_and_rate(
     입력으로만 받아 근거에 남긴다(부동산세제과-3728).
     """
     counting = count_acquisition_homes(homes, acquire_date)
+    low_note, low_flags = None, []
+    if not is_gift:
+        low_note, low_flags = _acquired_low_price(homes, counting, acquire_date)
     temp = None
     if acquire_date and (prev_disposal_date or disposal_to_same_household):
         temp = judge_acq_temporary_two_homes(
@@ -301,7 +351,9 @@ def judge_acquisition_homes_and_rate(
     rate = judge_acquisition_rate(
         counting["산입_주택수"], in_adjusted_area, is_corporation, exclusive_area_m2,
         is_gift, gift_std_value, gift_from_one_home_household_to_family,
-        temp["일시적2주택"] if temp else None)
+        temp["일시적2주택"] if temp else None, low_note)
+    if low_flags and rate.get("중과여부"):
+        rate.setdefault("플래그", []).extend(low_flags)
     if new_home_for_rental and temp:
         temp["플래그"].append("신규주택을 임대목적으로 취득 — 일시적 2주택 판정에 영향 없음")
     return {"산입_주택수": counting["산입_주택수"],

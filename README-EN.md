@@ -21,7 +21,7 @@ No warranty (AGPL §15, §16). [한국어 README](README.md).
 | MCP tools | 43 |
 | Statute nodes | 2431 (one function per article, paragraph or item) |
 | Articles pending conversion | 0 (every tax-affecting article in the corpus is a node) |
-| Regression cases / rulings / defect log | 307 / 1318 / 40 |
+| Regression cases / rulings / defect log | 312 / 1318 / 40 |
 
 Verification results per tax, with mismatch counts: [`docs/BENCH.md`](docs/BENCH.md). A worked example with the statute trail: [`docs/EXAMPLE.md`](docs/EXAMPLE.md).
 
