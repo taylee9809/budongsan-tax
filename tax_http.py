@@ -12,6 +12,7 @@ from starlette.responses import FileResponse, HTMLResponse, JSONResponse, PlainT
 import tax_server
 from hosted_descriptions import DESCRIPTIONS
 from policy_pages import CONTACT, PRIVACY_HTML, SUPPORT_NAME, TERMS_HTML
+from usage_log import UsageLogMiddleware
 
 REMOTE_TOOLS = {"search_law", "get_law_detail", "get_local_tax_ordinances", "search_tax_rulings"}
 
@@ -112,7 +113,10 @@ def make_server():
 
 def main():
     server = make_server()
-    uvicorn.run(server.streamable_http_app(), host=server.settings.host,
+    app = server.streamable_http_app()
+    if os.environ.get("USAGE_LOG", "1") != "0":
+        app = UsageLogMiddleware(app)
+    uvicorn.run(app, host=server.settings.host,
                 port=server.settings.port, access_log=False)
 
 
