@@ -34,6 +34,11 @@ def _tools() -> dict:
         found.update({n: getattr(corporate_tax, n) for n in getattr(corporate_tax, "TOOLS", ())})
     except ImportError:
         pass
+    try:
+        import building_property_tax
+        found.update({n: getattr(building_property_tax, n) for n in getattr(building_property_tax, "TOOLS", ())})
+    except ImportError:
+        pass
     return {k: v for k, v in found.items() if not inspect.iscoroutinefunction(v)}
 
 
