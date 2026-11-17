@@ -57,6 +57,9 @@ jobs:
         run: |
           IMAGE="${REGION}-docker.pkg.dev/${{ steps.auth.outputs.project_id }}/${REPOSITORY}/${SERVICE}:${GITHUB_SHA}"
           echo "IMAGE=${IMAGE}" >> "$GITHUB_ENV"
+          if ! gcloud artifacts repositories describe "${REPOSITORY}" --location "${REGION}" >/dev/null 2>&1; then
+            gcloud artifacts repositories create "${REPOSITORY}" --repository-format=docker --location "${REGION}"
+          fi
           gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
           docker build -f Dockerfile.chatgpt -t "${IMAGE}" .
           docker push "${IMAGE}"

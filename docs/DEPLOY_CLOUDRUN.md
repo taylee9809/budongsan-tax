@@ -23,6 +23,17 @@ cat key.json
 
 마지막에 출력된 JSON 전체를 복사한 뒤 `rm key.json`으로 지운다.
 
+## 1회 준비 (Cloud Shell을 쓸 수 없을 때: 콘솔 화면)
+
+1. Artifact Registry API 사용 설정: https://console.cloud.google.com/apis/library/artifactregistry.googleapis.com → **사용**
+2. 서비스 계정 만들기: https://console.cloud.google.com/iam-admin/serviceaccounts → **서비스 계정 만들기**
+   - 이름 `github-deployer` → 만들고 계속하기
+   - 역할 3개 추가: **Cloud Run 관리자**, **서비스 계정 사용자**, **Artifact Registry 관리자** → 완료
+3. 키 만들기: 목록에서 `github-deployer` → **키** 탭 → 키 추가 → 새 키 만들기 → **JSON** → 만들기. JSON 파일이 다운로드된다.
+4. 그 파일을 메모장 등으로 열어 내용 전체를 `GCP_SA_KEY` Secret에 붙여 넣고, 파일은 지운다.
+
+이미지 저장소(`budongsan-tax`)는 첫 배포 때 워크플로가 만든다.
+
 ## GitHub Secrets 등록
 
 저장소 → Settings → Secrets and variables → Actions → New repository secret
