@@ -1,5 +1,4 @@
 """Hosted MCP adapter. Keep generated tax_server.py unchanged."""
-import asyncio
 import os
 from urllib.parse import urlsplit
 
@@ -12,59 +11,12 @@ from mcp.types import ToolAnnotations
 from starlette.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 
 import tax_server
+from acquisition_checklist import get_acquisition_tax_checklist
 from hosted_descriptions import DESCRIPTIONS
 from policy_pages import CONTACT, PRIVACY_HTML, SUPPORT_NAME, TERMS_HTML
 from usage_log import UsageLogMiddleware
 
 REMOTE_TOOLS = {"search_law", "get_law_detail", "get_local_tax_ordinances", "search_tax_rulings"}
-
-
-ACQUISITION_LAWS = {
-    "지방세법": {"제10조의2", "제10조의3", "제10조의4", "제11조", "제13조의2", "제13조의3"},
-    "지방세법 시행령": {"제20조", "제28조의2", "제28조의3", "제28조의4", "제28조의5"},
-    "지방세특례제한법": {"제36조의3"},
-}
-
-
-async def _acquisition_law(name, article_numbers):
-    matches = (await tax_server.search_law(name, display=20))["LawSearch"]["law"]
-    match = next((row for row in matches if row["법령명한글"] == name), None)
-    if match is None:
-        raise ValueError(f"{name} 검색 결과에 정확히 일치하는 법령이 없습니다.")
-    serial = match["법령일련번호"]
-    law = (await tax_server.get_law_detail(serial))["법령"]
-    articles = [
-        article for article in law["조문"]["조문단위"]
-        if article.get("조문내용", "").split("(", 1)[0] in article_numbers
-    ]
-    if {article["조문내용"].split("(", 1)[0] for article in articles} != article_numbers:
-        raise ValueError(f"{name}에서 일부 조문을 찾지 못했습니다.")
-    return {
-        "법령": name,
-        "시행일": match["시행일자"],
-        "출처": f"https://www.law.go.kr/LSW/lsInfoP.do?lsiSeq={serial}",
-        "조문": articles,
-        "부칙": law.get("부칙", {}).get("부칙단위", [])[-1:],
-    }
-
-
-async def get_acquisition_tax_requirements() -> dict:
-    """취득세에 필요한 거래·보유 정보를 확인하기 위한 현행 법령 근거.
-
-    과세표준, 취득시기, 세율, 세대·주택 수, 일시적 2주택, 생애최초 감면에
-    관한 조문과 최신 부칙을 국가법령정보센터에서 실시간으로 조회한다.
-    취득가액이나 개인 정보를 입력하지 않아도 조회할 수 있다.
-    """
-    results = await asyncio.gather(*(
-        _acquisition_law(name, articles) for name, articles in ACQUISITION_LAWS.items()
-    ), return_exceptions=True)
-    return {
-        "법령근거": [result for result in results if isinstance(result, dict)],
-        "조회실패": [
-            name for name, result in zip(ACQUISITION_LAWS, results)
-            if isinstance(result, Exception)
-        ],
-    }
 
 
 def make_server():
@@ -98,17 +50,13 @@ def make_server():
         "These tools cover Korean tax law only: for other jurisdictions, say so and do not call any tool. "
         "Only use tools present in tools/list."
     )
-    if tax_server.LAW_OC:
-        instructions += (
-            " For questions about what information is needed to calculate Korean acquisition tax, "
-            "call get_acquisition_tax_requirements before answering or asking for facts. "
-            "Explain the facts relevant to the acquisition type in everyday language, with statutory citations. "
-            "For home replacement, check both properties' locations, acquisition and disposal dates, "
-            "and contract and deposit dates when transitional provisions apply. "
-            "If lookup is incomplete, say which legal basis could not be verified. "
-            "Use the law effective for the transaction, including transitional provisions, "
-            "and disclose any discrepancy with the calculation or judgment tools."
-        )
+    instructions += (
+        " Users usually do not know which facts Korean acquisition tax depends on. "
+        "When a user asks about acquisition tax (취득세) without giving all material facts, "
+        "call get_acquisition_tax_checklist with the acquisition type if known and the item keys already provided, "
+        "then ask only for the missing items, in everyday language, a few at a time, saying briefly why each matters. "
+        "Do not ask for items whose condition does not apply."
+    )
     server = FastMCP(
         "budongsan-tax", instructions=instructions, tools=enabled,
         host=os.environ.get("HOST", "127.0.0.1"),
@@ -117,16 +65,17 @@ def make_server():
         transport_security=TransportSecuritySettings(allowed_hosts=hosts, allowed_origins=origins),
     )
 
-    if tax_server.LAW_OC:
-        server.add_tool(
-            get_acquisition_tax_requirements,
-            annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False,
-                                        idempotentHint=True, openWorldHint=True),
-        )
+    # 생성 파일(tax_server.py)을 고치지 않고 호스팅 서버에만 붙이는 도구. 외부 조회 없음.
+    server.add_tool(
+        get_acquisition_tax_checklist,
+        title="Acquisition tax checklist",
+        annotations=ToolAnnotations(title="Acquisition tax checklist", readOnlyHint=True, destructiveHint=False,
+                                    idempotentHint=True, openWorldHint=False),
+    )
 
     @server.custom_route("/healthz", methods=["GET"])
     async def health(request):
-        return JSONResponse({"status": "ok", "tools": len(enabled) + bool(tax_server.LAW_OC), "law_lookup": bool(tax_server.LAW_OC)})
+        return JSONResponse({"status": "ok", "tools": len(server._tool_manager.list_tools()), "law_lookup": bool(tax_server.LAW_OC)})
 
     @server.custom_route("/", methods=["GET"])
     async def index(request):
