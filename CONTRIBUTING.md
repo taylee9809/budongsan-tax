@@ -19,7 +19,8 @@
 - 근거가 심판례나 해석례면 `rid`에 청구번호나 문서번호를 적는다. 조문이면 `expected_사유`에 조·항·호를 적는다
 - 경험치나 관행은 근거가 아니다. 원문이 있어야 한다
 
-그다음 `python scripts/verification_sync.py --rebuild` 로 DB를 다시 만들고 `python -m pytest tests` 를 돌린다.
+그다음 `python scripts/verify_tool_cases.py --case JB-15` 로 그 케이스를 돌려 본다(`--tool 이름`은 도구 하나, 인자 없이 전체).
+`python scripts/verification_sync.py --rebuild` 로 DB를 다시 만들고 `python -m pytest tests` 를 돌린다.
 실패하면 그대로 PR을 올려도 된다. 고치는 건 유지보수자 몫이다.
 
 ## 2. 조문을 노드로 옮기고 싶다
@@ -45,6 +46,10 @@ def 제114조(ctx):
 - 이름은 조문 번호를 그대로 쓴다(`제111조의2제1항`)
 
 `tax_nodes/jaesan.py`가 가장 짧은 본보기다. 옮긴 뒤 관련 케이스로 회귀를 돌린다.
+
+항 아래 호를 일부만 옮기면 `python scripts/node_coverage.py` 의 '호·목 점검'에 나머지 호가 전환 대기로 뜬다.
+옮기지 않아도 되는 호(삭제, 부동산이 아닌 과세대상 등)는 `data/coverage/subunit_dispositions.json`에 처리와 사유를 적는다.
+판단이 서지 않으면 적지 않는다. 전환 대기로 남는 것이 맞다.
 기존 판정기(`tax_judgment.py`)가 있는 조문이면 `scripts/experiments/verify_*_nodes.py`처럼 격자 대조를 붙인다.
 
 ## 3. 세법이 바뀌었다

@@ -14,7 +14,7 @@ mcp-name: io.github.taylee9809/budongsan-tax
 
 *English.* Korean real-estate tax engine and MCP server: acquisition, property, comprehensive holding,
 capital gains, rental income, gift and inheritance tax, reconstruction levy. 43 tools,
-2431 statute nodes (one function per article or paragraph), official rulings as regression tests.
+2456 statute nodes (one function per article or paragraph), official rulings as regression tests.
 Every result carries the statute trail. English README: [`README-EN.md`](README-EN.md). Tool list: [`llms.txt`](llms.txt).
 
 ## 구현 및 검증 현황
@@ -22,9 +22,9 @@ Every result carries the statute trail. English README: [`README-EN.md`](README-
 | 항목 | 규모 |
 |---|---|
 | MCP 도구 | 43 |
-| 실행 노드 | 2431 (조·항·호 단위의 실행 함수) |
-| 전환 대기 조문 | 0 (수록된 법문 코퍼스의 세액 영향 조문 기준) |
-| 회귀 케이스 / 해석례 / 결함 기록 | 307 / 1318 / 40 |
+| 실행 노드 | 2456 (조·항·호 단위의 실행 함수) |
+| 전환 대기 조문 | 조 단위 0 (수록된 법문 코퍼스의 세액 영향 조문 기준) · 호·목 단위 89 |
+| 회귀 케이스 / 해석례 / 결함 기록 | 333 / 1318 / 43 |
 
 위 수치는 저장소에 수록된 구현과 검증 자료의 규모입니다. 전체 세법의 지원 범위나 테스트 통과 건수를 의미하지 않습니다.
 
@@ -35,6 +35,7 @@ Every result carries the statute trail. English README: [`README-EN.md`](README-
 | 세율·계수 | `data/tax_params.json`, `tax_params.py` | 연도별 세율, 비율 및 상한 관리. 검증되지 않은 연도의 값은 반환하지 않습니다. |
 | 법령 원문 | `data/legal_nodes/` | 조문 원문과 시행일 보관. 계산 결과의 근거와 연결합니다. |
 | 판정·계산 도구 | `tax_judgment.py`, `tax_server.py`, `entity_tax.py` | 도구 43개. 세목별 요건 판정과 세액 계산을 제공합니다. |
+| 호스팅 전용 도구 | `acquisition_checklist.py`, `corporate_tax.py`, `tax_http.py` | HTTP 서버에만 붙는 도구 2개(취득세 입력 체크리스트, 법인의 부동산 양도 법인세). |
 | 조문별 실행 노드 | `tax_nodes/` | 조문 단위 함수를 조합하여 판정과 계산을 수행합니다. 기존 계산 로직을 이 구조로 이관하고 있습니다. |
 | 검증 | `data/verification/`, `tax_case_store.py` | 회귀 케이스, 결함 기록 및 해석례 관리 |
 

@@ -12,6 +12,7 @@ from starlette.responses import FileResponse, HTMLResponse, JSONResponse, PlainT
 
 import tax_server
 from acquisition_checklist import get_acquisition_tax_checklist
+from corporate_tax import calc_corporate_property_sale_tax
 from hosted_descriptions import DESCRIPTIONS
 from policy_pages import CONTACT, PRIVACY_HTML, SUPPORT_NAME, TERMS_HTML
 from usage_log import UsageLogMiddleware
@@ -57,6 +58,13 @@ def make_server():
         "then ask only for the missing items, in everyday language, a few at a time, saying briefly why each matters. "
         "Do not ask for items whose condition does not apply."
     )
+    instructions += (
+        " For a company (법인) selling real estate, calc_corporate_property_sale_tax returns corporate tax on the taxable base, "
+        "the additional tax on gains from housing, non-business land and housing rights (법인세법 §55의2) and local corporate income tax. "
+        "It does not compute the taxable base itself. 주민세, 부가가치세, 배당 과세 and other corporate matters are not covered by any tool here: "
+        "say so instead of quoting rates or article numbers from memory. "
+        "Cite only statute articles that a tool result returned."
+    )
     server = FastMCP(
         "budongsan-tax", instructions=instructions, tools=enabled,
         host=os.environ.get("HOST", "127.0.0.1"),
@@ -71,6 +79,14 @@ def make_server():
         title="Acquisition tax checklist",
         annotations=ToolAnnotations(title="Acquisition tax checklist", readOnlyHint=True, destructiveHint=False,
                                     idempotentHint=True, openWorldHint=False),
+    )
+
+    # 법인의 부동산 양도 — 조문 노드(tax_nodes/beobin.py)로 계산한다. 외부 조회 없음.
+    server.add_tool(
+        calc_corporate_property_sale_tax,
+        title="Corporate tax on a property sale (법인세)",
+        annotations=ToolAnnotations(title="Corporate tax on a property sale (법인세)", readOnlyHint=True,
+                                    destructiveHint=False, idempotentHint=True, openWorldHint=False),
     )
 
     @server.custom_route("/healthz", methods=["GET"])

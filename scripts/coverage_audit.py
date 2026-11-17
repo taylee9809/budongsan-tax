@@ -9,6 +9,9 @@ data/legal_nodes 에 노드가 있는지 역대조해 미반영 조문을 뽑는
 산출물:
   data/coverage/coverage_audit.json  — 법령별 전 조문 + 커버 여부 + 분류
   data/coverage/coverage_gaps.md     — 미반영 '세액영향' 조문만 추린 검토용 목록
+  data/coverage/subunits.json        — 조문별 항·호·목 구조(2026-11-17). 조 단위 대조는 "§111에 노드가 있다"만
+                                       보고 ①항 2호(건축물)가 빠진 것을 못 봤다. node_coverage.py 가 이 구조를
+                                       형제 목록으로 써서 호·목 누락을 센다.
 
 사용:
   py scripts/coverage_audit.py             # 추적 법령 전체
@@ -90,6 +93,14 @@ OUT_OF_SCOPE = {
 IN_SCOPE_ARTICLES = {
     "조세특례제한법": set(["3", "69의3", "69의4", "70의2", "71", "83", "85의2", "85의5", "85의8", "85의9", "97", "97의2", "97의6", "97의7", "97의8", "97의9", "98의2", "98의3", "98의4", "98의5", "98의6", "98의7", "98의8", "99", "99의2", "99의14", "104의13", "104의19", "104의20", "128", "132", "141", "146"]),
     "조세특례제한법 시행령": set(["40", "66의2", "66의3", "66의4", "67의2", "68", "73", "74", "78", "79의3", "79의6", "79의8", "79의9", "79의10", "97", "97의2", "97의3", "97의4", "97의5", "97의6", "97의7", "97의8", "97의9", "98", "98의2", "98의3", "98의4", "98의5", "98의6", "98의7", "99", "99의2", "99의3", "104의11", "104의12", "104의18", "134", "137"]),
+}
+
+# 법인세법은 부동산 양도에 닿는 조문만 본다 (2026-11-17). 여기 적힌 조문 밖은 "법인세 일반"으로 범위밖 표시한다.
+# 익금·손금·감가상각·합병·연결납세까지 검토 목록에 오르면 사람이 못 본다 — 배제가 아니라 audit.json 에 범위밖으로 남는다.
+SCOPE_ONLY = {
+    "법인세법": {"55", "55의2", "60의2"},
+    "법인세법 시행령": {"42", "92의2", "92의3", "92의4", "92의5", "92의6", "92의7", "92의8", "92의9", "92의10",
+                   "92의11", "97의4"},
 }
 
 OUT_OF_SCOPE_TITLE_KW = ["차량", "자동차", "선박", "항공기", "기계장비", "농기계", "이륜", "무선국", "이동통신", "해운항만", "항공운송",
@@ -230,6 +241,83 @@ def articles(doc):
     return out
 
 
+_항기호 = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳"
+
+
+def _as_list(x):
+    if x is None:
+        return []
+    return x if isinstance(x, list) else [x]
+
+
+def _flat(x):
+    """조문 내용은 문자열이거나 (표가 낀 경우) 중첩 리스트로 온다."""
+    if isinstance(x, list):
+        return " ".join(_flat(i) for i in x)
+    return str(x or "")
+
+
+def subunits_of(unit):
+    """조문단위 하나에서 항·호·목 구조를 뽑는다 → [{"항","호","목"?,"삭제"?,"요지"}].
+
+    법제처 lawService JSON은 조문단위 아래 항(항번호 ①…) → 호(호번호 "1." "1의2.") → 목(목번호 "가.")으로
+    내려가고, 원소가 하나면 리스트가 아니라 dict 로 온다. 항 없이 호가 바로 오는 조문은 항번호가 비어 있다.
+    호가 없는 항은 싣지 않는다(형제 비교 대상이 아니다).
+    """
+    out = []
+    for hang in _as_list(unit.get("항")):
+        if not isinstance(hang, dict):
+            continue
+        mark = (hang.get("항번호") or "").strip()
+        h = str(_항기호.index(mark[0]) + 1) if mark and mark[0] in _항기호 else ""
+        for ho in _as_list(hang.get("호")):
+            if not isinstance(ho, dict):
+                continue
+            m = re.match(r"\s*(\d+)(?:의\s*(\d+))?", ho.get("호번호") or "")
+            if not m:
+                continue
+            ho_no = m.group(1) + ("의" + m.group(2) if m.group(2) else "")
+            body = re.sub(r"^\s*\d+(의\d+)?\.\s*", "", _flat(ho.get("호내용")).strip())
+            row = {"항": h, "호": ho_no}
+            if body.startswith("삭제"):
+                row["삭제"] = True
+            row["요지"] = re.sub(r"\s+", " ", body)[:60]
+            out.append(row)
+            for mok in _as_list(ho.get("목")):
+                if not isinstance(mok, dict):
+                    continue
+                mm = re.match(r"\s*([가-하])", mok.get("목번호") or "")
+                if not mm:
+                    continue
+                mbody = re.sub(r"^\s*[가-하]\.\s*", "", _flat(mok.get("목내용")).strip())
+                mrow = {"항": h, "호": ho_no, "목": mm.group(1)}
+                if mbody.startswith("삭제"):
+                    mrow["삭제"] = True
+                mrow["요지"] = re.sub(r"\s+", " ", mbody)[:60]
+                out.append(mrow)
+    return out
+
+
+def law_subunits(doc):
+    """법령 문서 전체 → {조: [하위 단위]} (호가 있는 조문만)."""
+    units = doc.get("법령", {}).get("조문", {}).get("조문단위", [])
+    if isinstance(units, dict):
+        units = [units]
+    out = {}
+    for u in units:
+        if u.get("조문여부") != "조문":
+            continue
+        try:
+            num = int(u.get("조문번호"))
+        except (TypeError, ValueError):
+            continue
+        sub = int(u.get("조문가지번호") or 0)
+        rows = subunits_of(u)
+        if rows:
+            out["%d%s" % (num, ("의%d" % sub) if sub else "")] = rows
+    return out
+
+
 def classify(title):
     tax = any(k in title for k in TAX_KW)
     proc = any(k in title for k in PROC_KW)
@@ -265,6 +353,11 @@ def main():
         except (ValueError, OSError):
             report = {}
     gaps = []
+    sub_path = OUT_DIR / "subunits.json"
+    try:
+        subunits = json.loads(sub_path.read_text(encoding="utf-8")) if sub_path.exists() else {}
+    except (ValueError, OSError):
+        subunits = {}
     for name in targets:
         try:
             doc = fetch_law(name, oc)
@@ -276,6 +369,14 @@ def main():
             report[name] = {"error": "법령 조회 실패"}
             print("  !! " + name + ": 조회 실패")
             continue
+        # 항·호·목 구조 — 이번에 받은 법령분만 바꿔 쓴다(다른 법령분은 그대로 둔다)
+        got = law_subunits(doc)
+        if got:
+            subunits[name] = got
+            info = doc.get("법령", {}).get("기본정보", {})
+            subunits.setdefault("_meta", {}).setdefault("법령", {})[name] = {
+                "시행": str(info.get("시행일자", "")), "공포번호": str(info.get("공포번호", "")),
+                "공포일": str(info.get("공포일자", "")), "MST": str(info.get("법령일련번호", "") or "")}
         covered = node_refs.get(name, set())
         rows = []
         for a in articles(doc):
@@ -289,7 +390,11 @@ def main():
                 _k = "%d%s" % (a["조문번호"], ("의%d" % a["가지번호"]) if a["가지번호"] else "")
                 if _k not in IN_SCOPE_ARTICLES[name]:
                     excl = ["비양도·비부동산: 법인세·소득세·간접세 특례"]
-            dom = any(k in a["조문제목"] for k in DOMAIN_KW)
+            if not excl and name in SCOPE_ONLY:
+                _k = "%d%s" % (a["조문번호"], ("의%d" % a["가지번호"]) if a["가지번호"] else "")
+                if _k not in SCOPE_ONLY[name]:
+                    excl = ["법인세 일반: 부동산 양도 밖"]
+            dom = any(k in a["조문제목"] for k in DOMAIN_KW) or (name in SCOPE_ONLY and not excl)
             row = dict(a, covered=key in covered, 분류=classify(a["조문제목"]),
                        부동산도메인=dom, 범위밖=(excl[0] if excl else ""))
             rows.append(row)
@@ -314,6 +419,10 @@ def main():
 
     (OUT_DIR / "coverage_audit.json").write_text(
         json.dumps(report, ensure_ascii=False, indent=1), encoding="utf-8")
+    meta = subunits.setdefault("_meta", {})
+    meta.setdefault("설명", "법제처 원문의 항·호·목 구조. scripts/node_coverage.py 의 호·목 점검이 형제 목록으로 쓴다.")
+    meta["출처"] = "법제처 lawService(조문단위 → 항 → 호 → 목), scripts/coverage_audit.py 생성"
+    sub_path.write_text(json.dumps(subunits, ensure_ascii=False, indent=0), encoding="utf-8")
 
     # gaps는 이번에 돌린 법령분만 쌓였다. 유지된 법령은 저장된 조문 행에서 되살린다.
     fresh = set(targets)
