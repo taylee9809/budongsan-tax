@@ -2040,14 +2040,21 @@ def judge_156_3_from_portfolio(
     )
 
 @mcp.tool(title='Relief catalog entry', annotations=ToolAnnotations(title='Relief catalog entry', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
-def get_relief_catalog_entry(article: str) -> dict:
+def get_relief_catalog_entry(article: str = "", article_id: str = "") -> dict:
     """Look up one relief catalog entry by statute reference.
 
-    감면 카탈로그 한 건 조회 — "지특법 §36의5", "조특97의3" 같은 표기를 받는다.
+    감면 카탈로그 한 건 조회 — "지특법 §36의5", "조특97의3", "조세특례제한법 제97조의3" 같은 표기를 받는다.
 
     screen_relief_candidates가 뽑아 준 후보의 원문 요지·감면율·기한을 다시 볼 때 쓴다.
     여기 값도 C등급 기계추출이므로 확정 근거로 인용하면 안 된다.
+
+    article_id는 screen_relief_candidates 결과의 "id"를 그대로 넘길 때 쓰는 별칭이다.
+    클라이언트가 이 이름으로 보내 인수 검증에서 거부되던 실패를 막는다(2026-11 사용 로그).
     """
+    article = (article or article_id or "").strip()
+    if not article:
+        return {"오류": "조회할 조문이 비어 있다",
+                "안내": 'article에 "지특법 §36의5"·"조특97의3" 같은 조문 표기를 넣을 것'}
     e = _rc.lookup(article)
     if not e:
         return {"오류": "카탈로그에 없다: %s" % article,

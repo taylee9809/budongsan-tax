@@ -98,7 +98,32 @@ def test_lookup_forms():
     assert rc.lookup("조특법 §9999") is None
 
 
+def test_lookup_jo_notation():
+    """'제97조의3'을 §97로 잘못 읽던 버그 — 조 표기도 같은 조문이어야 한다."""
+    assert rc.lookup("조세특례제한법 제97조의3")["id"] == "조특97의3"
+    assert rc.lookup("지특법 36조의5")["id"] == "지특36의5"
+    assert rc.lookup("지방세특례제한법 제36조의3")["id"] == "지특36의3"
+    assert rc.lookup("조특법 97조 의 3")["id"] == "조특97의3"
+    assert rc.lookup("조세특례제한법 제97조")["id"] == "조특97"
+
+
 def test_implemented_flag_marks_existing_tools():
     """판정툴이 이미 있는 조문은 '없음 — 원문 직접 확인'으로 나오면 안 된다."""
     e = rc.lookup("조특133")
     assert e is not None and e["구현"] is True
+
+
+def test_tool_accepts_article_id_alias_and_empty():
+    """인수 이름을 article_id로 보내거나 비워도 검증 오류(tool_error) 대신 결과를 돌려준다."""
+    import asyncio
+    import json
+    from tax_server import mcp
+
+    async def call(args):
+        r = await mcp.call_tool("get_relief_catalog_entry", args)
+        content = r[0] if isinstance(r, tuple) else r
+        return json.loads(content[0].text)
+
+    assert asyncio.run(call({"article_id": "조특97의3"}))["id"] == "조특97의3"
+    assert asyncio.run(call({"article": "제97조의3"}))["id"] == "조특97의3"
+    assert "오류" in asyncio.run(call({}))
