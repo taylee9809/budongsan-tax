@@ -60,6 +60,14 @@ jobs:
           if ! gcloud artifacts repositories describe "${REPOSITORY}" --location "${REGION}" >/dev/null 2>&1; then
             gcloud artifacts repositories create "${REPOSITORY}" --repository-format=docker --location "${REGION}"
           fi
+          # 최근 이미지 3개만 남기고 하루 지난 나머지는 자동 삭제(무료 보관 한도 0.5GB 유지).
+          cat > /tmp/cleanup.json <<'JSON'
+          [
+            {"name": "keep-recent", "action": {"type": "Keep"}, "mostRecentVersions": {"keepCount": 3}},
+            {"name": "delete-old", "action": {"type": "Delete"}, "condition": {"tagState": "any", "olderThan": "1d"}}
+          ]
+          JSON
+          gcloud artifacts repositories set-cleanup-policies "${REPOSITORY}" --location "${REGION}" --policy=/tmp/cleanup.json --no-dry-run --quiet
           gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
           docker build -f Dockerfile.chatgpt -t "${IMAGE}" .
           docker push "${IMAGE}"

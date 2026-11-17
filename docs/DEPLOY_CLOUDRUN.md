@@ -32,7 +32,7 @@ cat key.json
 3. 키 만들기: 목록에서 `github-deployer` → **키** 탭 → 키 추가 → 새 키 만들기 → **JSON** → 만들기. JSON 파일이 다운로드된다.
 4. 그 파일을 메모장 등으로 열어 내용 전체를 `GCP_SA_KEY` Secret에 붙여 넣고, 파일은 지운다.
 
-이미지 저장소(`budongsan-tax`)는 첫 배포 때 워크플로가 만든다.
+이미지 저장소(`budongsan-tax`)는 첫 배포 때 워크플로가 만들고, 최근 이미지 3개만 남기는 정리 정책도 함께 건다(무료 보관 한도 0.5GB 안에서 유지).
 
 ## GitHub Secrets 등록
 
