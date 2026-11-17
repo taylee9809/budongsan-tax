@@ -6,10 +6,12 @@ import uvicorn
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 from pathlib import Path
+from mcp.types import ToolAnnotations
 
 from starlette.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 
 import tax_server
+from acquisition_checklist import get_acquisition_tax_checklist
 from hosted_descriptions import DESCRIPTIONS
 from policy_pages import CONTACT, PRIVACY_HTML, SUPPORT_NAME, TERMS_HTML
 from usage_log import UsageLogMiddleware
@@ -48,6 +50,13 @@ def make_server():
         "These tools cover Korean tax law only: for other jurisdictions, say so and do not call any tool. "
         "Only use tools present in tools/list."
     )
+    instructions += (
+        " Users usually do not know which facts Korean acquisition tax depends on. "
+        "When a user asks about acquisition tax (취득세) without giving all material facts, "
+        "call get_acquisition_tax_checklist with the acquisition type if known and the item keys already provided, "
+        "then ask only for the missing items, in everyday language, a few at a time, saying briefly why each matters. "
+        "Do not ask for items whose condition does not apply."
+    )
     server = FastMCP(
         "budongsan-tax", instructions=instructions, tools=enabled,
         host=os.environ.get("HOST", "127.0.0.1"),
@@ -56,9 +65,17 @@ def make_server():
         transport_security=TransportSecuritySettings(allowed_hosts=hosts, allowed_origins=origins),
     )
 
+    # 생성 파일(tax_server.py)을 고치지 않고 호스팅 서버에만 붙이는 도구. 외부 조회 없음.
+    server.add_tool(
+        get_acquisition_tax_checklist,
+        title="Acquisition tax checklist",
+        annotations=ToolAnnotations(title="Acquisition tax checklist", readOnlyHint=True, destructiveHint=False,
+                                    idempotentHint=True, openWorldHint=False),
+    )
+
     @server.custom_route("/healthz", methods=["GET"])
     async def health(request):
-        return JSONResponse({"status": "ok", "tools": len(enabled), "law_lookup": bool(tax_server.LAW_OC)})
+        return JSONResponse({"status": "ok", "tools": len(server._tool_manager.list_tools()), "law_lookup": bool(tax_server.LAW_OC)})
 
     @server.custom_route("/", methods=["GET"])
     async def index(request):
