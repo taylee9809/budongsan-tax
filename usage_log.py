@@ -3,27 +3,47 @@
 POST /mcp 의 JSON-RPC tools/call 만 골라 한 줄 JSON을 stdout에 찍는다. Cloud Run은 이 줄을
 Cloud Logging의 jsonPayload로 넣으므로 별도 저장소가 필요 없다(보관 30일, 개인정보처리방침과 동일).
 
-남기는 값: tool, ok, error, ms, user, session
+남기는 값: tool, ok, error, ms, user, session, args
 - user/session: ChatGPT가 _meta["openai/subject"]·_meta["openai/session"]로 보내는 익명 ID를
   USAGE_SALT로 한 번 더 해시(앞 16자)한 값. 원본 ID·IP·위치(_meta["openai/userLocation"])는 남기지 않는다.
 - ChatGPT 외 클라이언트(_meta 없음)는 user="-".
+- args: 값이 채워진 인수의 **이름만** 모은 목록(예: ["acquisition_price", "homes"]).
+  어떤 항목을 채워서 묻는지 집계하려는 것이므로 값은 절대 담지 않는다. 중첩 객체 안쪽 이름도 보지 않는다.
+  스키마에 있는 식별자 형태(ASCII) 이름만 통과시키고, 그 외(한글 키 등)는 버린다 — 값이 키 자리에
+  잘못 실려 오는 경우까지 막기 위한 안전장치다. USAGE_SALT를 바꾸면 user/session 해시가 달라져
+  같은 사람이 다른 사람으로 집계되므로 한번 정한 값은 바꾸지 않는다.
 """
 from __future__ import annotations
 
 import hashlib
 import json
 import os
+import re
 import sys
 import time
 
 _SALT = os.environ.get("USAGE_SALT", "budongsan-tax")
 _MAX_BODY = 1_000_000
+_MAX_FIELDS = 40
+# 스키마 인수 이름은 모두 ASCII 식별자다. 이 모양이 아니면 로그에 올리지 않는다.
+_FIELD_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,47}$")
 
 
 def _h(value) -> str:
     if not value or not isinstance(value, str):
         return "-"
     return hashlib.sha256((_SALT + value).encode()).hexdigest()[:16]
+
+
+def _fields(arguments) -> list:
+    """채워진 인수의 이름만 정렬해 돌려준다. 값은 담지 않는다."""
+    if not isinstance(arguments, dict):
+        return []
+    names = [
+        k for k, v in arguments.items()
+        if isinstance(k, str) and _FIELD_RE.match(k) and v is not None and v != "" and v != [] and v != {}
+    ]
+    return sorted(names)[:_MAX_FIELDS]
 
 
 def _calls(body: bytes):
@@ -38,7 +58,8 @@ def _calls(body: bytes):
             p = m.get("params") or {}
             meta = p.get("_meta") or {}
             out.append((m.get("id"), str(p.get("name", "?"))[:64],
-                        _h(meta.get("openai/subject")), _h(meta.get("openai/session"))))
+                        _h(meta.get("openai/subject")), _h(meta.get("openai/session")),
+                        _fields(p.get("arguments"))))
     return out
 
 
@@ -105,10 +126,11 @@ class UsageLogMiddleware:
         finally:
             ms = round((time.perf_counter() - start) * 1000)
             results = _results(b"".join(out)) if status < 400 else {}
-            for rid, tool, user, session in calls:
+            for rid, tool, user, session, args in calls:
                 ok, err = results.get(rid, (False, f"http_{status}") if status >= 400 else (True, None))
                 try:
-                    emit({"tool": tool, "ok": ok, "error": err, "ms": ms, "user": user, "session": session})
+                    emit({"tool": tool, "ok": ok, "error": err, "ms": ms, "user": user, "session": session,
+                          "args": args})
                 except Exception:  # 로깅 실패가 응답을 막으면 안 된다
                     pass
 
