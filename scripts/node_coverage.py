@@ -118,6 +118,7 @@ def _load_nodes():
     import tax_nodes.nongteuk  # noqa: F401
     import tax_nodes.jongbu_imdaegigan  # noqa: F401
     import tax_nodes.jiteuk_jeongui  # noqa: F401
+    import tax_nodes.beobin_bisaeop  # noqa: F401
     from tax_nodes import 전체
     return 전체()
 
