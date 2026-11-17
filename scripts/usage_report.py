@@ -85,6 +85,23 @@ def main(path: str) -> None:
         ms = statistics.median(p.get("ms", 0) for p in ps)
         print(f"  {tool:<40} {len(ps):>4}  {fail:>5.0%}  {ms:>6.0f}")
 
+    # 어떤 항목을 채워서 묻는지(인수 이름만. 값은 로그에 없다).
+    with_args = [p for p, _ in rows if p.get("args")]
+    if not with_args:
+        print("\n입력 항목: 기록 없음 (args 필드가 추가되기 전 로그이거나 인수 없는 호출)")
+        return
+    print(f"\n입력 항목(값 아님, 이름만) · 인수가 있는 호출 {len(with_args)}건")
+    print("  인수 개수: 중앙값 "
+          f"{statistics.median(len(p['args']) for p in with_args):.0f} · "
+          f"최대 {max(len(p['args']) for p in with_args)}")
+    for tool, ps in sorted(by_tool.items(), key=lambda kv: -len(kv[1])):
+        named = [p for p in ps if p.get("args")]
+        if not named:
+            continue
+        freq = Counter(name for p in named for name in p["args"])
+        top = " · ".join(f"{name} {c}/{len(named)}" for name, c in freq.most_common(6))
+        print(f"  {tool}\n      {top}")
+
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
