@@ -1,0 +1,73 @@
+# main에 푸시되면 테스트 → Dockerfile.chatgpt 이미지 빌드 → Artifact Registry 푸시 → Cloud Run 배포.
+# 필요한 GitHub Secrets: GCP_SA_KEY(서비스 계정 키 JSON), USAGE_SALT(선택). 준비 방법은 docs/DEPLOY_CLOUDRUN.md.
+# GCP_SA_KEY가 없으면 배포 단계는 건너뛴다(실패로 표시하지 않음).
+name: deploy-cloudrun
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-cloudrun
+  cancel-in-progress: false
+
+env:
+  REGION: asia-northeast3
+  SERVICE: budongsan-tax
+  REPOSITORY: budongsan-tax
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install . 'mcp>=1.26,<2' pytest
+      - run: python -m pytest tests -q
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      HAS_KEY: ${{ secrets.GCP_SA_KEY != '' }}
+    steps:
+      - name: Skip when GCP_SA_KEY is not configured
+        if: env.HAS_KEY != 'true'
+        run: echo "::notice::GCP_SA_KEY secret이 없어 Cloud Run 배포를 건너뜁니다. docs/DEPLOY_CLOUDRUN.md 참고."
+
+      - uses: actions/checkout@v4
+        if: env.HAS_KEY == 'true'
+
+      - id: auth
+        if: env.HAS_KEY == 'true'
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - if: env.HAS_KEY == 'true'
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Build and push image
+        if: env.HAS_KEY == 'true'
+        run: |
+          IMAGE="${REGION}-docker.pkg.dev/${{ steps.auth.outputs.project_id }}/${REPOSITORY}/${SERVICE}:${GITHUB_SHA}"
+          echo "IMAGE=${IMAGE}" >> "$GITHUB_ENV"
+          gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+          docker build -f Dockerfile.chatgpt -t "${IMAGE}" .
+          docker push "${IMAGE}"
+
+      - name: Deploy to Cloud Run
+        if: env.HAS_KEY == 'true'
+        env:
+          USAGE_SALT: ${{ secrets.USAGE_SALT }}
+        run: |
+          ARGS=(--image "${IMAGE}" --region "${REGION}" --project "${{ steps.auth.outputs.project_id }}" --allow-unauthenticated --quiet)
+          # --update-env-vars는 지정한 키만 바꾸고 기존 환경변수(SUPPORT_EMAIL 등)는 유지한다.
+          if [ -n "${USAGE_SALT}" ]; then ARGS+=(--update-env-vars "USAGE_SALT=${USAGE_SALT}"); fi
+          gcloud run deploy "${SERVICE}" "${ARGS[@]}"
+          gcloud run services describe "${SERVICE}" --region "${REGION}" --project "${{ steps.auth.outputs.project_id }}" --format='value(status.url)'
