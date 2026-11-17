@@ -41,8 +41,11 @@ REVISION_WATCH = {
                    "근거": "지특법 §36의3 (2025-12-31 개정)", "확인": "2026-08-20"},
 }
 
-LOW_PRICE_HOME_LIMIT_CAPITAL = 100_000_000       # 취득세 저가주택 수도권 (영 §28의2 1호가목)
-LOW_PRICE_HOME_LIMIT_NONCAPITAL = 200_000_000    # 취득세 저가주택 비수도권 (동 나목)
+# 저가주택(영 §28의2 1호) 판정은 실행 노드 지방세법시행령-28의2 가 한다(_acq_low_price_exception).
+# 아래 두 상수는 판정에 쓰지 않는다 — 1억은 부속토지(영 §28의4⑥5호) 기준과 구판 대조본
+# (data/verification/legacy_acq_v0.py)이 읽는다.
+LOW_PRICE_HOME_LIMIT_CAPITAL = 100_000_000       # 부속토지 1억 (영 §28의4⑥5호) · 구판 대조용
+LOW_PRICE_HOME_LIMIT_NONCAPITAL = 200_000_000    # 구판 대조용 (판정 미사용)
 OFFICETEL_COUNT_LIMIT = 100_000_000              # 오피스텔 주택수 산입 기준 (영 §28의4⑥4호)
 HIGH_PRICE_HOME = 1_200_000_000                  # 고가주택 (소법 §89①3호)
 FAIR_INTEREST_RATE = 0.046                       # 적정이자율 (법인규칙 §43②)
@@ -57,7 +60,6 @@ def _cite(rule: str, basis: str, grade: str = "B") -> dict:
 
 # ── 1. 취득세: 주택수 산정 → 세율·부가세 판정 ──────────────────────────────
 # ── 취득세 주택수·중과 경과규정 상수 ────────────────────────────────────────
-_ACQ_LOCAL_2E_FROM = date(2025, 1, 2)     # 영 35477호 부칙 §2 — 이후 취득분부터 비수도권 저가 2억
 _ACQ_SMALL_OFFI_FROM = date(2024, 1, 10)  # 1.10 대책 소형 오피스텔 특례 시작 (영 §28의4⑥8·9호)
 _ACQ_SMALL_OFFI_TO = date(2025, 12, 31)   # 〃 종료
 _ACQ_SMALL_OFFI_AREA = 60.0               # 전용 60㎡ 이하
@@ -66,13 +68,67 @@ _ACQ_SMALL_OFFI_PRICE_LOCAL = 300_000_000      # 비수도권 3억 이하
 GIFT_HEAVY_STD_VALUE = 300_000_000        # 무상취득 중과 기준 시가표준액 (영 §28의6①)
 
 
-def _acq_low_price_limit(is_capital: bool, acquire: date | None) -> tuple[int, str]:
-    """저가주택 기준액 — 비수도권은 취득일로 1억/2억이 갈린다."""
-    if is_capital:
-        return LOW_PRICE_HOME_LIMIT_CAPITAL, "수도권 1억"
-    if acquire is None or acquire >= _ACQ_LOCAL_2E_FROM:
-        return LOW_PRICE_HOME_LIMIT_NONCAPITAL, "비수도권 2억(2025-01-02 이후 취득분)"
-    return LOW_PRICE_HOME_LIMIT_CAPITAL, "비수도권 1억(2025-01-02 전 취득분 — 완화 전)"
+def _acq_low_price_exception(it: dict, acquire_date: str | None) -> tuple[bool, str]:
+    """저가주택(영 §28의2 1호) 해당 여부 — 실행 노드 지방세법시행령-28의2 에 묻는다.
+
+    기준액(수도권 1억·그 외 2억)과 2025-01-02 경계(영 35477호 부칙 §2), 정비구역·사업시행구역
+    단서는 노드 한 곳에만 적혀 있다. 주택 수 제외(영 §28의4⑥1호)와 취득 주택의 중과 제외
+    (법 §13의2① · 영 §28의2 본문)가 같은 판정을 쓴다.
+    시가표준액이 없으면(0 포함) 판정하지 않는다 — 저가주택으로 추정하지 않는다.
+    """
+    std = int(it.get("시가표준액", 0) or 0)
+    if not std:
+        return False, ""
+    from tax_nodes.chwideuk_gwase import 주택중과_예외
+    r = 주택중과_예외(취득일=acquire_date or "", 시가표준액=std, 수도권=bool(it.get("수도권")),
+                 정비구역=bool(it.get("정비구역") or it.get("사업시행구역")))
+    if not r["중과예외"] or r.get("호") != "1호 저가주택":
+        return False, ""
+    return True, r.get("근거") or "영 §28의2 1호 — 저가주택"
+
+
+_ACQ_TARGET_UNSET = "취득 주택 미지정 — 저가주택 예외를 판정하지 못했다"
+
+
+def _acq_target_home(homes: list[dict]) -> tuple[dict | None, str]:
+    """homes 가운데 '이번에 취득하는 주택'을 고른다.
+
+    순서: "취득대상": true → "라벨": "신규" → homes 가 1개면 그것. 지정이 둘 이상이면 고르지 않는다.
+    반환: (원소 또는 None, 고른 방법)
+    """
+    marked = [it for it in homes if it.get("취득대상")]
+    how = '"취득대상": true'
+    if not marked:
+        marked = [it for it in homes if it.get("라벨") == "신규"]
+        how = '"라벨": "신규"'
+    if len(marked) == 1:
+        return marked[0], how
+    if len(marked) > 1:
+        return None, "취득 주택이 둘 이상 지정됨(%s %d건)" % (how, len(marked))
+    if len(homes) == 1:
+        return homes[0], "homes 가 1개 — 그 주택을 취득 대상으로 봄"
+    return None, "지정 없음"
+
+
+def _acq_target_exception(homes: list[dict], acquire_date: str | None) -> dict:
+    """취득 주택이 영 §28의2 1호 저가주택이어서 법 §13의2① 중과 대상에서 빠지는지."""
+    target, how = _acq_target_home(homes)
+    if target is None:
+        return {"판정가능": False, "중과예외": None, "취득주택": None, "지정방법": how,
+                "사유": _ACQ_TARGET_UNSET + ("" if how == "지정 없음" else f" ({how})")}
+    label = target.get("라벨") or target.get("종류", "주택")
+    kind = target.get("종류", "주택")
+    if kind not in ("주택", "부속토지"):
+        return {"판정가능": True, "중과예외": False, "취득주택": label, "지정방법": how,
+                "사유": f"취득 대상 종류가 '{kind}' — 영 §28의2 1호는 주택(지분·부속토지 포함) 취득에만 적용"}
+    if not int(target.get("시가표준액", 0) or 0):
+        return {"판정가능": False, "중과예외": None, "취득주택": label, "지정방법": how,
+                "사유": "취득 주택의 시가표준액 미입력 — 저가주택 예외를 판정하지 못했다"}
+    ok, basis = _acq_low_price_exception(target, acquire_date)
+    return {"판정가능": True, "중과예외": ok, "취득주택": label, "지정방법": how,
+            "근거": basis if ok else None,
+            "사유": basis if ok else ("저가주택 아님(영 §28의2 1호 — 수도권 1억·그 외 2억 초과, "
+                                    "정비구역·사업시행구역 소재, 또는 2025-01-02 전 취득 비수도권 1억 초과)")}
 
 
 def count_acquisition_homes(items: list[dict], acquire_date: str | None = None) -> dict:
@@ -82,7 +138,8 @@ def count_acquisition_homes(items: list[dict], acquire_date: str | None = None) 
       "종류": "주택"|"조합원입주권"|"주택분양권"|"오피스텔"|"부속토지",
       "시가표준액": int,                  # 지분·부속토지만이면 전체 기준 (영 §28의2 1호)
       "수도권": bool,
-      "정비구역": bool,                   # 저가주택 제외의 예외 (재개발 딱지 차단)
+      "정비구역": bool,                   # 저가주택 제외의 예외 — 정비구역·소규모주택정비 사업시행구역
+      "취득대상": bool,                   # 이번에 취득하는 주택 (없으면 "라벨": "신규", homes 1개면 그것)
       "상속개시_5년내": bool,             # ⑥3호
       "혼전분양권_배우자혼전주택": bool,   # ⑥6호 혼인 완충
       "전용면적": float,                  # ⑥8·9호 소형 오피스텔 (60㎡ 이하)
@@ -95,7 +152,6 @@ def count_acquisition_homes(items: list[dict], acquire_date: str | None = None) 
     반환: 산입 주택수 + 항목별 판정과 근거. 세대내 공동소유 1개 간주(④)는 호출자가
     같은 물건을 1개로 넣는 것으로 처리.
     """
-    acq = date.fromisoformat(acquire_date) if acquire_date else None
     counted, details = 0, []
     for it in items:
         kind = it.get("종류", "주택")
@@ -117,11 +173,10 @@ def count_acquisition_homes(items: list[dict], acquire_date: str | None = None) 
                 small, note = _is_small_officetel(it)
                 if small:
                     excluded, why = True, note
-        elif kind == "주택" and not it.get("정비구역"):
-            limit, label_limit = _acq_low_price_limit(bool(it.get("수도권")), acq)
-            if std and std <= limit:
-                excluded, why = True, (f"저가주택({label_limit} 이하) — 제외 "
-                                       "(영 §28의2 1호·§28의4⑥1호, 영 35477호 부칙 §2)")
+        elif kind == "주택":
+            low, basis = _acq_low_price_exception(it, acquire_date)
+            if low:
+                excluded, why = True, f"저가주택 — 주택 수 제외 (영 §28의4⑥1호 · {basis})"
         if not excluded:
             counted += 1
         details.append({"항목": label, "산입": not excluded, "사유": why or "산입 (영 §28의4①: 주택+입주권+분양권+오피스텔)"})
@@ -199,7 +254,8 @@ def judge_acquisition_rate(counted_homes_including_new: int, in_adjusted_area: b
                            exclusive_area_m2: float | None = None,
                            is_gift: bool = False, gift_std_value: int = 0,
                            gift_from_one_home_household_to_family: bool = False,
-                           temporary_two_homes: bool | None = None) -> dict:
+                           temporary_two_homes: bool | None = None,
+                           low_price_exception: dict | None = None) -> dict:
     """취득세 세율 + 부가세 2종 실효율 판정 (지방세법 §13의2·§151, 농특세법 §5 — 노드 N13-2-1·N-LT151-2·N-NT5-6).
 
     counted_homes_including_new: 취득 주택 포함 산입 주택수 (count_acquisition_homes 출력 + 1 아님 — 포함해서 전달)
@@ -207,7 +263,12 @@ def judge_acquisition_rate(counted_homes_including_new: int, in_adjusted_area: b
       (법 §13의2②·영 §28의6①). 1세대1주택자 소유 주택을 배우자·직계존비속이 무상취득하면
       제외(gift_from_one_home_household_to_family, 영 §28의6②1호).
     temporary_two_homes: 영 §28의5 일시적 2주택 해당 여부 — True면 §13의2①2호 중과에서 빠진다.
-      judge_acq_temporary_two_homes()의 '일시적2주택' 값을 그대로 넘길 것.
+      judge_acq_temporary_two_homes()의 '일시적2주택' 값을 그대로 넘길 것. 법인 취득(①1호)에는
+      일시적 2주택 제외가 없다 — 괄호는 ①2호에만 있다.
+    low_price_exception: 취득 주택의 영 §28의2 1호(저가주택) 판정 — _acq_target_exception() 출력.
+      '중과예외'가 True면 법인·주택 수와 무관하게 법 §13의2① 중과 대상이 아니다(영 §28의2 본문).
+      이 함수는 기준액을 모른다 — 판정은 실행 노드 지방세법시행령-28의2 가 한다.
+      무상취득(§13의2②)에는 적용되지 않는다(영 §28의2 본문이 '법 제13조의2제1항을 적용할 때').
     반환 세율은 그대로 calc_acquisition_tax 인자로 사용 가능.
     """
     n = counted_homes_including_new
@@ -231,7 +292,37 @@ def judge_acquisition_rate(counted_homes_including_new: int, in_adjusted_area: b
                    _cite("1세대1주택자→배우자·직계존비속 무상취득은 제외", "법 §13의2② 단서·영 §28의6②1호", "A")],
             "플래그": ["증여 취득은 유상거래 중과(§13의2①)와 별개 트랙 — 주택수 매트릭스가 아니라 가액 기준"],
         }
-    if temporary_two_homes:
+    small = exclusive_area_m2 is not None and exclusive_area_m2 <= 85
+    if low_price_exception and low_price_exception.get("중과예외"):
+        basis = low_price_exception.get("근거") or "영 §28의2 1호 — 저가주택"
+        flags = ["저가주택은 주택 수(영 §28의4⑥1호)에서도 빠진다 — 다음 취득의 주택 수 산정에 반영",
+                 "시가표준액은 취득 당시 기준이고 지분·부속토지만 취득하면 전체 주택의 시가표준액으로 본다(영 §28의2 1호가목)"]
+        if is_corporation:
+            flags.append("대도시 법인 설립·전입 5년 내 취득(법 §13②)에 해당하면 그 조문이 §13의2①1호 세율을 "
+                         "따로 끌어온다 — 영 §28의2가 거기에도 미치는지는 확인하지 못했다. 별도 확인")
+        return {
+            "판정": f"저가주택 — 중과 제외({basis})",
+            "취득세율": "1~3% (6~9억 사잇공식은 호출자 계산 — §11①8호)",
+            "중과여부": False,
+            "지방교육세율(과표대비)": "취득세율×50%×20% (0.1~0.3%)",
+            "농특세율(과표대비)": 0.0 if small else 0.002,
+            "농특세비고": ("전용 85㎡ 이하 서민주택 — 농특세 비과세 (농특세법 §4 9·11호·영 §4⑤)" if small
+                       else "전용면적 미확인 시 과세 가정 — 85㎡ 이하면 0"),
+            "저가주택_중과예외": True,
+            "근거": [
+                _cite(f"취득 주택이 저가주택 — 법 §13의2① 중과세 대상으로 보지 않는다 ({basis})",
+                      "지방세법 시행령 §28의2 본문·1호가목·나목·단서, 영 35477호(2025-04-29) 부칙 §2 "
+                      "(실행 노드 지방세법시행령-28의2)", "A"),
+                _cite("중과가 빠지면 유상거래 주택 세율 — 6억 이하 1%, 6억 초과 9억 이하 사잇공식, 9억 초과 3%. "
+                      "취득자가 법인이어도 같다(§11①8호는 취득자를 가리지 않고, §13의2①이 '제11조제1항제8호에도 "
+                      "불구하고' 덮는 구조)", "지방세법 §11①8호·§13의2① 각 호 외의 부분", "A"),
+                _cite("지방교육세 = §11①8호 세율×50%×20% (중과 0.4% 고정은 §13의2 해당 시에만)",
+                      "지방세법 §151①1호 본문 괄호·나목", "A"),
+                _cite("농특세 = 표준세율 2% 치환 세액의 10% = 과표의 0.2%", "농특세법 §5①6호", "A"),
+            ],
+            "플래그": flags,
+        }
+    if temporary_two_homes and not is_corporation:
         return {
             "판정": "일시적 2주택 — 중과 배제(영 §28의5)",
             "취득세율": "1~3% (6~9억 사잇공식은 호출자 계산 — §11①8호)",
@@ -274,7 +365,10 @@ def judge_acquisition_rate(counted_homes_including_new: int, in_adjusted_area: b
             _cite("중과 시 지방교육세 0.4% 고정", "지방세법 §151①1호나목", "A"),
             _cite("농특세 0.2/0.6/1.0%", "농특세법 §5①6호 (표준세율 2% 치환+중과가산 유지)", "A"),
         ],
-        "플래그": ["일시적 2주택(영 §28의5: 종전 주택등 1개+3년 내 처분, 1년 경과 요건 없음) 해당 시 중과 배제 — 별도 확인"] if heavy else [],
+        "플래그": ((["일시적 2주택(영 §28의5: 종전 주택등 1개+3년 내 처분, 1년 경과 요건 없음) 해당 시 중과 배제 — 별도 확인"]
+                 if not is_corporation else
+                 ["법인 취득(§13의2①1호)에는 일시적 2주택 제외가 없다 — 괄호는 ①2호에만 있다"])
+                if heavy else []),
     }
 
 
@@ -290,10 +384,16 @@ def judge_acquisition_homes_and_rate(
     """취득세 주택수 산정 + 일시적 2주택 + 세율 판정 결합 (server.py 래퍼가 그대로 부른다).
 
     acquire_date는 비수도권 저가주택 기준(1억↔2억)과 일시적 2주택 기산에 모두 쓰인다.
+    이번에 취득하는 주택은 homes 원소의 "취득대상": true 또는 "라벨": "신규"로 가리킨다. 둘 다 없고
+    homes 가 1개면 그것을 취득 대상으로 본다. 여러 채인데 지정이 없으면 종전대로 판정하고 플래그에
+    "취득 주택 미지정 — 저가주택 예외를 판정하지 못했다"를 남긴다.
     new_home_for_rental은 판정을 바꾸지 않는다 — 임대목적 취득도 일시적 2주택이 되기 때문에
     입력으로만 받아 근거에 남긴다(부동산세제과-3728).
     """
     counting = count_acquisition_homes(homes, acquire_date)
+    # 취득 주택이 저가주택이면 법인·주택 수와 무관하게 §13의2① 중과 대상이 아니다(영 §28의2 1호).
+    # 무상취득(§13의2②)은 이 예외와 무관하다 — 판정하지 않는다.
+    low = None if is_gift else _acq_target_exception(homes, acquire_date)
     temp = None
     if acquire_date and (prev_disposal_date or disposal_to_same_household):
         temp = judge_acq_temporary_two_homes(
@@ -301,7 +401,10 @@ def judge_acquisition_homes_and_rate(
     rate = judge_acquisition_rate(
         counting["산입_주택수"], in_adjusted_area, is_corporation, exclusive_area_m2,
         is_gift, gift_std_value, gift_from_one_home_household_to_family,
-        temp["일시적2주택"] if temp else None)
+        temp["일시적2주택"] if temp else None, low)
+    if low is not None and not low["판정가능"]:
+        # 종전 동작(주택 수·법인 매트릭스)을 유지하고, 판정하지 못했다는 사실만 남긴다
+        rate.setdefault("플래그", []).append(low["사유"])
     if new_home_for_rental and temp:
         temp["플래그"].append("신규주택을 임대목적으로 취득 — 일시적 2주택 판정에 영향 없음")
     return {"산입_주택수": counting["산입_주택수"],
@@ -309,6 +412,9 @@ def judge_acquisition_homes_and_rate(
             "판정": rate.get("판정"),
             "농특세율(과표대비)": rate.get("농특세율(과표대비)"),
             "일시적2주택": temp["일시적2주택"] if temp else None,
+            "저가주택_중과예외": low["중과예외"] if low else None,
+            "취득주택_저가판정": low,
+            "플래그": list(rate.get("플래그", [])),
             "주택수_산정": counting, "세율_판정": rate, "일시적2주택_판정": temp}
 
 
