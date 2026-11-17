@@ -23,6 +23,7 @@ CASES = [
     ("judge_family_loan", {"loan_amount": 200000000, "agreed_interest_rate": 0.02}),
     ("calc_corporate_property_sale_tax", {"business_year": 2026, "taxable_base": 100000000, "sales": [
         {"라벨": "주택", "종류": "주택", "양도금액": 500000000, "장부가액": 400000000}]}),
+    ("calc_building_property_tax", {"year": 2026, "standard_value": 500000000}),
 ]
 
 
@@ -40,7 +41,7 @@ async def check(port):
         else:
             raise RuntimeError("Server did not start")
         health = response.json()
-        assert health == {"status": "ok", "tools": 41, "law_lookup": False}, health
+        assert health == {"status": "ok", "tools": 43, "law_lookup": False}, health
         assert (await http.get(root + "/.well-known/openai-apps-challenge")).text == "synthetic-domain-check"
         invalid_host = await http.post(root + "/mcp", headers={"Host": "untrusted.invalid"}, json={})
         assert invalid_host.status_code == 421, invalid_host.text
@@ -49,8 +50,8 @@ async def check(port):
                 await client.initialize()
                 tools = (await client.list_tools()).tools
                 names = {t.name for t in tools}
-                assert len(names) == 41 and "search_law" not in names and "get_acquisition_tax_checklist" in names
-                assert "calc_corporate_property_sale_tax" in names
+                assert len(names) == 43 and "search_law" not in names and "get_acquisition_tax_checklist" in names
+                assert {"calc_corporate_property_sale_tax", "judge_corporate_non_business_land", "calc_building_property_tax"} <= names
                 assert all(t.annotations and t.annotations.readOnlyHint for t in tools)
                 results = []
                 for name, arguments in CASES:

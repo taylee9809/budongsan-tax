@@ -57,15 +57,10 @@ def test_node_exists_for_each_subunit(법령, 조, 항, 호, 목):
     assert all(n.원문 for n in hit)
 
 
-def test_no_income_tax_gap_left_after_merging_transfer_dispositions():
-    """이 세션 몫(소득세법·시행령)은 노드 또는 처리 사유로 전부 덮인다. 처리 파일은 조정 세션이 합친다."""
+def test_no_income_tax_gap_left():
+    """소득세법·시행령의 호·목은 노드 또는 처리 사유로 전부 덮인다(처리 파일은 subunit_dispositions.json 하나로 합쳤다)."""
     nodes = node_coverage._load_nodes()
     disp = json.loads(node_coverage.DISPOSITIONS.read_text(encoding="utf-8"))
-    extra = json.loads((ROOT / "data" / "coverage" / "subunit_dispositions.transfer.json").read_text(encoding="utf-8"))
-    for k, v in extra.items():
-        if not k.startswith("_"):
-            assert v["처리"] in node_coverage.처리구분 and v["사유"]
-            disp.setdefault(k, v)
     sub = node_coverage.subunit_gaps(nodes, json.loads(node_coverage.SUBUNITS.read_text(encoding="utf-8")), disp)
     assert [g["표기"] for g in sub["미처리"] if g["법령"] in ("소득세법", "소득세법 시행령")] == []
     assert [k for k in sub["묵은처리"] if k.startswith("소득세법")] == []

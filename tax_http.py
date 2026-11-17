@@ -12,7 +12,8 @@ from starlette.responses import FileResponse, HTMLResponse, JSONResponse, PlainT
 
 import tax_server
 from acquisition_checklist import get_acquisition_tax_checklist
-from corporate_tax import calc_corporate_property_sale_tax
+from building_property_tax import calc_building_property_tax
+from corporate_tax import calc_corporate_property_sale_tax, judge_corporate_non_business_land
 from hosted_descriptions import DESCRIPTIONS
 from policy_pages import CONTACT, PRIVACY_HTML, SUPPORT_NAME, TERMS_HTML
 from usage_log import UsageLogMiddleware
@@ -61,7 +62,10 @@ def make_server():
     instructions += (
         " For a company (법인) selling real estate, calc_corporate_property_sale_tax returns corporate tax on the taxable base, "
         "the additional tax on gains from housing, non-business land and housing rights (법인세법 §55의2) and local corporate income tax. "
-        "It does not compute the taxable base itself. 주민세, 부가가치세, 배당 과세 and other corporate matters are not covered by any tool here: "
+        "It does not compute the taxable base itself. judge_corporate_non_business_land judges whether land sold by a company is "
+        "non-business land (법인세법 §55의2②) and returns nothing when facts are missing. "
+        "calc_building_property_tax computes property tax on non-residential buildings (상가·공장 등, 지방세법 §111①2호). "
+        "주민세, 부가가치세, 배당 과세 and other corporate matters are not covered by any tool here: "
         "say so instead of quoting rates or article numbers from memory. "
         "Cite only statute articles that a tool result returned."
     )
@@ -86,6 +90,20 @@ def make_server():
         calc_corporate_property_sale_tax,
         title="Corporate tax on a property sale (법인세)",
         annotations=ToolAnnotations(title="Corporate tax on a property sale (법인세)", readOnlyHint=True,
+                                    destructiveHint=False, idempotentHint=True, openWorldHint=False),
+    )
+
+    server.add_tool(
+        judge_corporate_non_business_land,
+        title="Corporate non-business land test (법인 비사업용 토지)",
+        annotations=ToolAnnotations(title="Corporate non-business land test (법인 비사업용 토지)", readOnlyHint=True,
+                                    destructiveHint=False, idempotentHint=True, openWorldHint=False),
+    )
+    # 건축물(상가·공장 등) 재산세 — 조문 노드(tax_nodes/jaesan_geonchuk.py)로 계산한다.
+    server.add_tool(
+        calc_building_property_tax,
+        title="Property tax on a building (건축물 재산세)",
+        annotations=ToolAnnotations(title="Property tax on a building (건축물 재산세)", readOnlyHint=True,
                                     destructiveHint=False, idempotentHint=True, openWorldHint=False),
     )
 

@@ -13,7 +13,7 @@
 
 1. https://chatgpt.com/plugins 에서 `+` → **Add custom MCP server**를 선택한다.
 2. 위 값을 입력하고 표시된 연결 안내를 확인한다.
-3. **Create as a plugin**을 누르고 도구 목록을 확인한다. LAW_OC 설정 기준 45개다(법령·해석례·조례 조회 4개 포함, 없으면 41개).
+3. **Create as a plugin**을 누르고 도구 목록을 확인한다. LAW_OC 설정 기준 47개다(법령·해석례·조례 조회 4개 포함, 없으면 43개).
 4. 생성된 플러그인을 설치한다.
 5. 새 대화에서 `@`로 **Budongsan Tax**를 선택한 다음 아래 예시를 보낸다.
 
@@ -32,7 +32,7 @@
 
 2026-10-12 00:42 KST 공개 HTTPS 검증:
 
-- `/healthz`: HTTP 200, `status=ok`, `tools=41`, `law_lookup=false`.
+- `/healthz`: HTTP 200, `status=ok`, `tools=43`, `law_lookup=false`.
 - MCP 초기화와 도구 목록 조회 성공.
 - 취득세, 재산세, 증여세, 부수토지 면적, 가족 간 대여금 예시 호출 성공.
 - 음수 취득가액 입력 거부 확인.
