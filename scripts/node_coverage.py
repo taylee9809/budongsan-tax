@@ -112,6 +112,8 @@ def _load_nodes():
     import tax_nodes.chwideuk_gasanse  # noqa: F401
     import tax_nodes.beobin  # noqa: F401
     import tax_nodes.jaesan_geonchuk  # noqa: F401
+    import tax_nodes.yangdo_jungkwa_ho  # noqa: F401
+    import tax_nodes.yangdo_jeongui_ho  # noqa: F401
     from tax_nodes import 전체
     return 전체()
 

@@ -589,7 +589,13 @@ def 중과판정_주택수(보유목록: list[dict], 중과계열: int = 3, 매�
     ctx = 실행(f, 2026, 세목="세대주택수")
     제외 = set(ctx.값("중과불산입_167의4" if 중과계열 == 3 else "중과불산입_167의11")) | set(ctx.값("중과불산입_1억", []) or [])
     라벨들 = [it.get("라벨") or it.get("종류", "주택") for it in 보유목록]
-    n = len([l for l in 라벨들 if l not in 제외])
+    다가구 = {}
+    if any(it.get("공동상속_지분목록") or (it.get("종류") == "다가구주택" and it.get("가구수") is not None) for it in 보유목록):
+        # 영 §167의3②1호(다가구 — 구획별로 세고, 1주택으로 보는 것은 거주자 선택)·2호(공동상속 — 최대 지분 상속인의 주택). 연결(2026-11-17).
+        import tax_nodes.yangdo_jungkwa_ho  # noqa: F401
+        제외 |= set(ctx.값("중과불산입_공동상속소수지분", []) or [])
+        다가구 = ctx.값("중과_다가구_주택수", {}) or {}
+    n = sum(int(다가구.get(l, 1)) for l in 라벨들 if l not in 제외)
     return {"중과판정_주택수": n, "불산입": sorted(제외), "중과계열": 중과계열, "명의신탁_제외": 명의신탁제외,
             "적용 조문": ctx.적용조문(), "미적용 조문": ctx.미적용목록, "근거표": ctx.근거표()}
 
