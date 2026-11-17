@@ -85,6 +85,17 @@ def main(path: str) -> None:
         ms = statistics.median(p.get("ms", 0) for p in ps)
         print(f"  {tool:<40} {len(ps):>4}  {fail:>5.0%}  {ms:>6.0f}")
 
+    # 실패한 호출: 어떤 이름으로 보냈고 무엇 때문에 거부됐는지(값은 로그에 없다).
+    failed = [p for p, _ in rows if not p.get("ok")]
+    if failed:
+        print(f"\n실패 내역 {len(failed)}건: 도구 · 오류 · 이유 · 보낸 항목 이름")
+        reasons = Counter(
+            (p.get("tool", "?"), p.get("error") or "?", ", ".join(p.get("error_detail") or ["(기록 없음)"]),
+             ", ".join(p.get("args") or []) or "(기록 없음)")
+            for p in failed)
+        for (tool, err, detail, args), c in reasons.most_common():
+            print(f"  {c:>3}건  {tool} · {err} · {detail} · [{args}]")
+
     # 어떤 항목을 채워서 묻는지(인수 이름만. 값은 로그에 없다).
     with_args = [p for p, _ in rows if p.get("args")]
     if not with_args:
