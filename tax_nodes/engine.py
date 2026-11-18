@@ -102,7 +102,8 @@ class 조문:
             i = int(self.항)
             s += _항기호[i - 1] if 1 <= i <= len(_항기호) else "제%s항" % self.항
         if self.호:
-            s += "%s호" % self.호
+            # 항이 없는 조(농어촌특별세법 §4 등)는 조 번호와 호 번호가 붙어 "§411호"로 읽힌다(findings 341) — 띄운다.
+            s += ("%s호" if self.항 else " %s호") % self.호
         if self.목:
             s += "%s목" % self.목
         return s

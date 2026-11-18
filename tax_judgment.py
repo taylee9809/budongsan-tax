@@ -1099,8 +1099,8 @@ def judge_temporary_two_homes(prev_acquired: str, new_acquired: str,
                               prev_sale_date: str | None = None,
                               prev_meets_exemption: bool = True,
                               one_year_rule_waived: bool = False,
-                              prev_in_adjusted_area: bool = False,
-                              new_in_adjusted_area: bool = False,
+                              prev_in_adjusted_area: bool | None = None,
+                              new_in_adjusted_area: bool | None = None,
                               moved_in_within_1y: bool | None = None,
                               moved_in_date: str | None = None,
                               new_home_tenant_lease_end: str | None = None,
@@ -1209,6 +1209,20 @@ def judge_temporary_two_homes(prev_acquired: str, new_acquired: str,
         citations.append(_cite(f"종전 취득 {prev_acquired} + 1년 ≤ 신규 취득 {new_acquired}: {'충족' if one_year_ok else '미충족'}",
                                "영 §155① (1년 이상 지난 후 신규 취득)", "B"))
 
+    # 조정대상지역 여부를 받지 못한 경우(findings 290) — '모름'과 '아님'을 가른다. 하나라도 False 면 3년이 확정이고,
+    # 둘 다 True 일 수 있는데 모르면 2026.8.4. 이후 취득분은 2년일 수 있다. 그 전 취득분은 종전대로 미입력을 '아님'으로 본다.
+    adj_unknown = ((prev_in_adjusted_area is None or new_in_adjusted_area is None)
+                   and prev_in_adjusted_area is not False and new_in_adjusted_area is not False
+                   and n >= _R155_2026_ACQ)
+    years_if_adj = None
+    if adj_unknown:
+        years_if_adj = _r155_regime(
+            n, s, True, True,
+            date.fromisoformat(new_contract_date) if new_contract_date else None,
+            prev_adjusted_after_new_contract,
+            date.fromisoformat(new_right_acquired) if new_right_acquired else None,
+            date.fromisoformat(adjusted_area_notice_date) if adjusted_area_notice_date else None)[0]
+    prev_in_adjusted_area, new_in_adjusted_area = bool(prev_in_adjusted_area), bool(new_in_adjusted_area)
     years, needs_move_in, regime = _r155_regime(
         n, s, prev_in_adjusted_area, new_in_adjusted_area,
         date.fromisoformat(new_contract_date) if new_contract_date else None,
@@ -1234,6 +1248,17 @@ def judge_temporary_two_homes(prev_acquired: str, new_acquired: str,
         sale_note = (f"양도(예정)일 {prev_sale_date} — 데드라인 {deadline.isoformat()} "
                      f"{'이내 충족' if sale_ok else '경과·미충족'} (잔여 {(deadline - s).days}일)")
     citations.append(_cite(sale_note, f"영 §155① (신규 취득일부터 {years}년 이내 종전주택 양도)", "B"))
+    adj_pending = False
+    if years_if_adj is not None and years_if_adj < years:
+        short = _add_years(n, years_if_adj)
+        if s and short < s <= deadline:
+            adj_pending, sale_ok = True, None
+            flags.append(f"조정대상지역 여부 미입력 — 신규 주택 취득일 현재 종전·신규 주택이 모두 조정대상지역이면 양도기한이 "
+                         f"{years_if_adj}년({short.isoformat()})이라 이 양도는 기한을 넘긴다. 하나라도 아니면 {years}년({deadline.isoformat()}) "
+                         f"이내라 충족이다. prev_in_adjusted_area·new_in_adjusted_area 를 받아야 판정할 수 있다 — 판정 보류(영 §155①1호, 대통령령 제36737호)")
+        else:
+            flags.append(f"조정대상지역 여부 미입력 — {years}년 기준으로 계산했다. 신규 주택 취득일 현재 종전·신규 주택이 모두 조정대상지역이면 "
+                         f"양도기한은 {years_if_adj}년({short.isoformat()})이다(영 §155①1호, 대통령령 제36737호)")
 
     # ── 전입요건 (구법·조정→조정 1년 구간만) ──
     move_in_ok: bool | None = None
@@ -1268,7 +1293,7 @@ def judge_temporary_two_homes(prev_acquired: str, new_acquired: str,
     flags.append("종전주택 취득시기 자체가 갈리는 유형(분양전환임대 등)은 취득시기 판정 선행 — 사례③ 쟁점. "
                  "대금청산 전 소유권이전등기를 한 경우 취득시기는 등기접수일(영 §162①2호)")
 
-    if needs_move_in and move_in_ok is None:
+    if (needs_move_in and move_in_ok is None) or (adj_pending and one_year_ok and prev_meets_exemption):
         qualifies = None
     else:
         qualifies = one_year_ok and (sale_ok is not False) and prev_meets_exemption and (move_in_ok is not False)

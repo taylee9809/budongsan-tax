@@ -82,6 +82,21 @@ def make_server():
         "and give no rates, amounts or article numbers from memory. "
         "Cite only statute articles that a tool result returned."
     )
+    # 질문 리허설(docs/QUESTION_REHEARSAL.md)에서 나온 처방 a1~a4.
+    instructions += (
+        " Rates and article numbers written in these instructions or in tool descriptions are there to help you pick a tool. "
+        "Before a tool result has returned them, do not state them to the user as the applicable rate; say which tax applies "
+        "and that you will compute it. A get_tax_scope result counts as a tool result. "
+        "If the user gave an amount but not the other inputs a calc_* tool needs (date, year, age, holding period, home count, ownership), "
+        "ask for them first. Never fill a date argument with today's date or the current year on your own. "
+        "If you still compute to show an order of magnitude, call it provisional in the first sentence and list every input you assumed. "
+        "When comparing an individual with a company (개인 vs 법인), show each side's computed taxes stage by stage, but do not open with "
+        "or conclude which side is cheaper overall: tax on taking money out of the company (배당·급여), VAT and social insurance are not "
+        "computed here and can reverse the result. Say that in the same sentence as any total. "
+        "Do not derive a tool input from your own tax arithmetic (for example 근로소득금액 from an annual salary). "
+        "Ask the user for the figure, or call the tool without it and say which part was left out. "
+        "A judge_* result of None (보류·판정불가) means a fact is missing: ask for it instead of picking a side."
+    )
     server = FastMCP(
         "budongsan-tax", instructions=instructions, tools=enabled,
         host=os.environ.get("HOST", "127.0.0.1"),

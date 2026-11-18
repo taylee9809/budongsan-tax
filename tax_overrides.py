@@ -31,7 +31,10 @@ import tax_params
 import tax_server as _ts
 
 #: 원래 도구와 기본값이 달라진 인자. 그 밖의 기존 인자는 이름·순서·기본값이 원래 도구와 같아야 한다(테스트가 대조).
-CHANGED_DEFAULTS: dict = {}
+CHANGED_DEFAULTS: dict = {
+    # 조정대상지역 여부 — 미입력(None)과 '아님'(False)을 가른다(findings 290). 생성 도구는 False 가 기본이라 3년으로 확정한다.
+    "judge_temporary_two_homes": {"prev_in_adjusted_area": None, "new_in_adjusted_area": None},
+}
 
 
 def _거부(사유: str, 근거: str, **더) -> dict:
@@ -134,8 +137,8 @@ def judge_temporary_two_homes(
     prev_sale_date: str | None = None,
     prev_meets_exemption: bool = True,
     one_year_rule_waived: bool = False,
-    prev_in_adjusted_area: bool = False,
-    new_in_adjusted_area: bool = False,
+    prev_in_adjusted_area: bool | None = None,
+    new_in_adjusted_area: bool | None = None,
     moved_in_within_1y: bool | None = None,
     moved_in_date: str | None = None,
     new_home_tenant_lease_end: str | None = None,

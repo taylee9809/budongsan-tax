@@ -508,6 +508,32 @@ def calc_corporate_acquisition_tax(
                         대도시_법인설립전입_부동산=True if 중과 else None,
                         대도시_중과제외업종=True if (중과 and excluded_business) else None)
 
+    def 근거맞춤(r: dict) -> tuple[list, list]:
+        """개인용 취득세 노드가 낸 조문 근거를 이 도구가 내린 법인 판정에 맞춘다(findings 342)."""
+        적용, 미적용 = list(r["적용 조문"]), [dict(m) for m in r["미적용 조문"]]
+        고침 = {}
+        if 주택:
+            고침["지방세법 §13의3"] = "법인 취득 — 세대 주택 수를 세지 않는다"
+            고침["지방세법 §13의2④"] = "법인 취득 — 조정대상지역 여부를 묻지 않는다"
+            if 예외:
+                고침["지방세법 §13의2①"] = "시행령 §28의2 %s 예외로 법인 주택 중과(12%%)에서 빠진다" % 예외정보["호"]
+                미적용 = [m for m in 미적용 if m["표기"] != "지방세법 시행령 §28의2"]
+                if "지방세법 시행령 §28의2" not in 적용:
+                    적용.append("지방세법 시행령 §28의2")
+            elif standard_value is None and heavy_exception_item is None:
+                고침["지방세법 시행령 §28의2"] = "판정 불가 — 시가표준액(standard_value)을 받지 못했다"
+            else:
+                고침["지방세법 시행령 §28의2"] = "예외에 해당하지 않는다" + (
+                    " — %s" % 예외정보["사유"] if 예외정보.get("사유") else " — 시가표준액이 기준액을 넘거나 정비구역 등 제외 사유")
+        if 대도시 is None:
+            고침["지방세법 §13②"] = "판정 불가 — %s" % 사유
+        elif 대도시 is False:
+            고침["지방세법 §13②"] = "대도시 중과 아님 — %s" % 사유
+        for m in 미적용:
+            if m["표기"] in 고침:
+                m["사유"] = 고침[m["표기"]]
+        return 적용, 미적용
+
     out = {"납세의무자": "법인", "취득가액": acquisition_price, "취득일": acquire_date, "부동산": property_kind,
            "법인주택중과": bool(주택 and not 예외) if 주택 else None, "주택중과_예외": 예외정보,
            "대도시중과": 대도시, "대도시중과_사유": 사유}
@@ -529,8 +555,8 @@ def calc_corporate_acquisition_tax(
                         "경우별_세액": {"대도시 중과 아님": _acq_parts(아님), "대도시 중과": _acq_parts(중과)}})
             notes.append("대도시 중과 여부를 정하지 못해 세액을 하나로 내지 않았다 — 경우별_세액의 두 값 가운데 어느 쪽인지는 "
                          "대도시중과_사유에 적힌 사실로 갈린다. 둘 중 하나를 골라 답하지 않는다")
-            미적용 = 아님["미적용 조문"]
-            out.update({"적용 조문": 아님["적용 조문"], "미적용 조문": 미적용, "값 출처": dict(아님["값 출처"], **출처)})
+            적용, 미적용 = 근거맞춤(아님)
+            out.update({"적용 조문": 적용, "미적용 조문": 미적용,"값 출처": dict(아님["값 출처"], **출처)})
             out["주의"] = notes
             out["다루지 않는 것"] = ACQUISITION_NOT_COVERED
             return out
@@ -544,7 +570,8 @@ def calc_corporate_acquisition_tax(
         notes.append("exclusive_area 가 없어 농어촌특별세를 과세로 계산했다 — 전용 85㎡ 이하 주택이면 농어촌특별세가 없다")
     if 주택 and not 예외:
         notes.append("법인의 주택 취득은 주택 수·조정대상지역과 무관하게 12%다(§13의2①1호)")
-    out.update({"적용 조문": r["적용 조문"], "미적용 조문": r["미적용 조문"], "값 출처": dict(r["값 출처"], **출처)})
+    적용, 미적용 = 근거맞춤(r)
+    out.update({"적용 조문": 적용, "미적용 조문": 미적용, "값 출처": dict(r["값 출처"], **출처)})
     out["주의"] = notes
     out["다루지 않는 것"] = ACQUISITION_NOT_COVERED
     return out
