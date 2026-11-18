@@ -27,12 +27,15 @@ robots.txt 는 전체 허용. 그래도 요청 사이에 1.5초를 쉰다.
                                                국세청 350105: 본문 없음 — taxlaw.nts.go.kr 로 302. 목록의 제목·요지 한 줄뿐
   expc  /LSW/expcSc.do?query=…                 /LSW/expcInfoP.do?expcSeq=…   (법제처 법령해석례)
 
-국세청 예규 본문(taxlaw.nts.go.kr) — 2026-11-18 실측: 이 환경에서는 받지 못한다.
-  목록의 상세링크는 https://taxlaw.nts.go.kr/qt/USEQTA002P.do?ntstDcmId=<번호> 꼴이다. 호스트를 허용 목록에 넣은 뒤에도
-  80번 포트는 "302 → https" 를 돌려주지만 443번은 TLS 인사에 응답이 없어 10초 뒤 연결이 끊긴다(curl·openssl·Chromium 모두 같음,
-  TLS 1.2 고정도 같음). 로그인·캡차 화면까지 가지도 못하므로 본문 구조를 확인하지 못했고, 그래서 본문 파서도 넣지 않았다 —
-  보지 못한 화면에 맞춘 파서는 추측이다. nts-probe 가 "가능"을 내는 환경(국내 망 등)이 생기면 그때 화면을 보고 detail() 에 경로를 더한다.
-  국세청 건은 여전히 목록의 제목·요지 한 줄뿐이고, 그것으로는 회귀 케이스 기대값을 만들지 않는다.
+국세청 예규 본문(taxlaw.nts.go.kr) — 망에 따라 갈린다. 2026-11-18 양쪽에서 실측했다.
+  목록의 상세링크는 https://taxlaw.nts.go.kr/qt/USEQTA002P.do?ntstDcmId=<번호> 꼴이다.
+  · 클라우드 세션: 호스트를 허용 목록에 넣어도 443 이 TLS 인사에 응답하지 않는다(curl·openssl·Chromium 모두,
+    TLS 1.2 고정도 같음). 80 은 "302 → https" 만 준다. 로그인·캡차 화면까지 가지도 못한다.
+  · 사용자 PC(국내 망): 같은 URL 이 그대로 열린다(32,996바이트·로그인 없음). nts-probe 가 "가능" 을 낸다.
+  본문을 받는 길은 이 파일이 아니라 scripts/fetch_rulings.py 의 nts_detail() 에 이미 있다 —
+  화면이 쓰는 내부 액션(POST /action.do, actionId=ASIQTB002PR01, paramData={"dcmDVO":{"ntstDcmId":…}})을
+  그대로 부른다. 그래서 여기에는 국세청 본문 파서를 따로 두지 않는다(두 벌이 되면 본문sha256 이 갈린다).
+  국내 망에서 한 번 받아 두면 data/rulings/ 캐시와 data/verification/rulings.jsonl 에 남아 클라우드에서도 쓴다.
 
 검색 시맨틱(실측): 공백은 AND 로 보인다 — "대도시 중과 저가주택" 0건, "대도시 중과" 126건. 2토큰 이하로.
 사건번호("2025인3865")를 그대로 넣으면 그 건만 나온다.
