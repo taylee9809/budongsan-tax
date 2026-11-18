@@ -112,6 +112,7 @@ def _html_to_text(html: str) -> str:
 
 def nts_detail(dcm_id: str) -> dict:
     """국세청 예규 1건의 전문을 받아 재결례와 같은 모양으로 정규화한다."""
+    OUT.mkdir(parents=True, exist_ok=True)          # data/rulings/ 는 .gitignore 라 새 복제본에는 없다
     p = OUT / f"ntsCgmExpc_{dcm_id}.json"
     if p.exists():
         return json.loads(p.read_text(encoding="utf-8"))

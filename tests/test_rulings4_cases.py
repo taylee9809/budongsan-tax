@@ -1,7 +1,8 @@
 """분업 4차 '판례 회귀' 묶음 (2026-11-18) — data/verification/node_cases/rulings4_*.jsonl 의 형식과 결과.
 
 본문은 www.law.go.kr 웹 화면에서 읽었다(scripts/fetch_rulings_web.py) — 법제처 법령해석례.
-국세청 예규 본문(taxlaw.nts.go.kr)은 이 환경에서 받지 못해 케이스가 없다. 여기서는
+국세청 예규(rulings4_nts_honin.jsonl)는 사용자 PC(국내 망)에서 taxlaw.nts.go.kr 본문을 받아 넣었다
+— 클라우드 세션에서는 443 이 응답하지 않아 못 받는다(scripts/fetch_rulings_web.py 머리말의 실측). 여기서는
 1. 케이스 줄이 scripts/verify_node_cases.py 머리말의 형식에 맞는지,
 2. rid 가 판례 색인(data/verification/rulings.jsonl)에 있는지, 노드 id 가 등록돼 있는지,
 3. 활성 케이스가 판례 결론과 같은 결과를 내는지 본다.
