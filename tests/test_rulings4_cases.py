@@ -23,7 +23,7 @@ _DIR = ROOT / "data" / "verification" / "node_cases"
 _FILES = sorted(_DIR.glob("rulings4_*.jsonl"))
 _CASES = [(f.name, json.loads(l)) for f in _FILES for l in f.read_text(encoding="utf-8").splitlines() if l.strip()]
 _IDS = [c["case_id"] for _, c in _CASES]
-_알려진_불일치 = {"R315626-1": "findings 150 — 영 §155⑤ 노드가 혼인 후 세대 내 증여(보유상태 변동)를 받지 않는다"}
+_알려진_불일치: dict = {}     # R315626-1(findings 150)은 2026-11-18 노드를 고쳐 통과한다
 _제외사유 = ("구법", "사실판단", "정보부족", "쟁점-노드밖", "연결오류", "판례충돌", "해석충돌")
 
 
