@@ -112,3 +112,40 @@ def test_property_relief_direct_use_reason_recorded():
     assert any("직접 사용하는 부동산이 아님" in m["사유"] and "소유자의 사용이 아님" in m["사유"] for m in r["미적용 조문"])
     # '직접 사용'을 요건으로 적지 않은 조문(빈집 정비 §75의6③)은 사용주체를 줘도 그대로
     assert 지특법_재산세감면(1_000_000, 2026, "빈집정비", 사용주체="임차인")["감면세액"] == 500_000
+
+
+# ------------------------------------------------------------------ 4. 주택임대소득 영 §8의2 — ③2호 단서·④ 후단
+import itertools  # noqa: E402
+from fractions import Fraction  # noqa: E402
+
+import tax_judgment  # noqa: E402
+
+
+@pytest.mark.parametrize("연도", [2018, 2019, 2020, 2022, 2023, 2026])
+def test_rental_home_count_judge_matches_node(연도):
+    """판정기 count_rental_homes 와 노드(소득세법시행령-8의2-3-b)가 공동소유 소수지분 단서(가·나목)에서 같은 답을 낸다."""
+    for 지분, 수입, 시가 in itertools.product(["1/5", "31/100", "2/5"], [0, 5_999_999, 6_000_000], [800_000_000, 1_000_000_000, 1_300_000_000]):
+        판정기 = tax_judgment.count_rental_homes(
+            [{"라벨": "공동", "공동소유": True, "지분율": float(Fraction(지분)), "최대지분자": False, "기준시가": 시가, "연임대수입": 수입}], [], 연도)["주택수"]
+        노드 = 실행({"임대소득_보유주택목록": [{"이름": "공동", "본인지분": 지분, "타인최대지분": "3/5", "기준시가": 시가, "본인_임대수입_연": 수입}]},
+                  연도, 세목="종합소득세").값("임대소득_주택수_b")
+        assert 판정기 == 노드, (연도, 지분, 수입, 시가)
+
+
+def test_rental_home_count_existing_calls_unchanged():
+    """2020년 이후·주택ID 없는 호출은 그대로다."""
+    소수 = {"라벨": "공동", "공동소유": True, "지분율": 0.2, "최대지분자": False, "기준시가": 500_000_000, "연임대수입": 7_000_000}
+    for y in (None, 2020, 2023, 2026):
+        assert tax_judgment.count_rental_homes([소수], [], y)["주택수"] == 1
+    부부 = {"라벨": "부부공동", "공동소유": True, "지분율": 0.5, "최대지분자": True}
+    r = tax_judgment.count_rental_homes([부부], [dict(부부)], 2026)        # 주택ID 없음 — 서로 다른 주택으로 본다(종전)
+    assert r["주택수"] == 2 and all("_share" not in x for x in r["항목별"])
+    r = tax_judgment.count_rental_homes([dict(부부, 주택ID="H", 지분율=0.3)], [dict(부부, 주택ID="H", 지분율=0.7)], 2026)
+    assert (r["주택수"], r["본인"], r["배우자"]) == (1, 0, 1)
+
+
+def test_rental_mixed_use_single_tenant_same_as_whole_building():
+    """임차인이 1명이면 ④ 후단이 아니라 본문 — 건물 전체 면적으로 본 결과와 같다."""
+    a = 실행({"주택부분면적": 90, "사업용건물면적": 70}, 2026, 세목="종합소득세").값("임대소득_겸용주택범위_b")
+    b = 실행({"임차인별_면적": [{"임차인": "갑", "주택부분면적": 90, "사업용건물면적": 70}]}, 2026, 세목="종합소득세").값("임대소득_겸용주택범위_b")
+    assert a == b == {"전부주택": True, "기준시가판정대상": "건물 전체와 그 부수토지(전부 주택)", "주택부수토지비율": 1.0}

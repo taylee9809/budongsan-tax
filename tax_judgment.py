@@ -2366,8 +2366,14 @@ def count_rental_homes(own_homes: list[dict], spouse_homes: list[dict] | None = 
               "연임대수입": int, "전대": bool, "국외": bool}
     다가구주택은 1개로 넣고, 구분등기된 경우에만 호수만큼 나눠 넣는다(③1호).
     tax_year: ③2호나목 고가 기준(12억, 2022 귀속 이전 9억) 판정용 — 미지정 시 현행 12억.
+      ③2호 단서 가·나목(소수지분자라도 수입 600만원 이상·고가주택 지분 30% 초과면 소유)은 영 30395호(2020.2.11.) 신설, 부칙 §30 —
+      2020년 과세기간부터다. tax_year 가 2019 이하면 단서를 적용하지 않는다(2026-11-18, 노드 소득세법시행령-8의2-3-b 와 맞춤).
+    "주택ID"(선택): 부부가 공동소유한 같은 주택을 본인·배우자 목록에 각각 넣을 때 같은 값을 준다 — 둘 다 소유로 계산되면
+      ③4호 단서에 따라 1명(지분이 더 큰 사람, 같으면 합의한 1명)의 주택으로 보아 한 번만 센다. 주지 않으면 서로 다른 주택으로 본다(종전).
     """
     rows, counted = [], 0
+    proviso = not (tax_year and int(tax_year) <= 2019)      # ③2호 단서 — 2020년 과세기간부터
+    seen_ids: dict = {}
     for owner, homes in (("본인", own_homes or []), ("배우자", spouse_homes or [])):
         for h in homes:
             label = h.get("라벨") or (owner + " 주택")
@@ -2378,19 +2384,35 @@ def count_rental_homes(own_homes: list[dict], spouse_homes: list[dict] | None = 
                 income = int(h.get("연임대수입") or 0)
                 if h.get("최대지분자"):
                     why = "공동소유 — 최대지분자로 산입 (③2호 본문)"
-                elif income >= 6_000_000:
+                elif proviso and income >= 6_000_000:
                     why = "공동소유 소수지분이나 연 임대수입 600만원 이상 — 산입 (③2호 가목)"
-                elif price > _rental_price_cap(tax_year) and share > 0.30:
+                elif proviso and price > _rental_price_cap(tax_year) and share > 0.30:
                     why = (f"공동소유 소수지분이나 기준시가 {_rental_price_cap(tax_year) // 100_000_000}억 초과"
                            "+지분 30% 초과 — 산입 (③2호 나목)")
                 else:
                     include, why = False, "공동소유 소수지분 — 최대지분자 소유로 계산 (③2호)"
             elif h.get("전대"):
                 why = "전대·전전세 — 임차인의 주택으로 계산 (③3호)"
+            hid = h.get("주택ID")
+            if include and hid is not None:
+                if hid in seen_ids:
+                    # ③4호 단서 — 공동소유 주택 하나가 본인·배우자 각각의 소유로 계산되면 1명의 주택으로 보아 합산
+                    prev = seen_ids[hid]
+                    if float(h.get("지분율") or 0) > float(prev.get("_share") or 0):
+                        prev["산입"], prev["사유"] = False, "부부 공동소유 — 지분이 더 큰 배우자의 주택으로 계산 (③4호 단서 가목)"
+                        counted -= 1
+                    else:
+                        include, why = False, "부부 공동소유 — 본인·배우자 중 1명의 주택으로 계산해 한 번만 산입 (③4호 단서)"
             if include:
                 counted += 1
-            rows.append({"소유자": owner, "라벨": label, "산입": include, "사유": why,
-                         "소형주택": _is_small_house(h)})
+            row = {"소유자": owner, "라벨": label, "산입": include, "사유": why,
+                   "소형주택": _is_small_house(h)}
+            if hid is not None and include:
+                seen_ids[hid] = row
+                row["_share"] = float(h.get("지분율") or 0)
+            rows.append(row)
+    for r in rows:
+        r.pop("_share", None)
 
     flags = []
     if any(h.get("국외") for h in (own_homes or []) + (spouse_homes or [])):
