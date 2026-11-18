@@ -6,6 +6,10 @@ changes.md 가 생성되면 워크플로가 GitHub 이슈를 만들어 감수자
 스킬 알고리즘 반영 체크리스트를 포함시킨다.
 
 환경변수: LAW_OC (open.law.go.kr 발급 OC 아이디)
+
+키가 없으면 `python scripts/law_watch.py --source web` — law.go.kr 웹 본문 머리줄에서 같은 값을 읽는다
+(scripts/law_web.py, 캐시를 쓰지 않고 매번 다시 받는다). 상태 파일의 모양은 두 경로가 같다. 다만 값의 출처가
+다르므로(API 는 검색 결과, 웹은 현행 본문 화면) 경로를 바꾼 첫 실행에서는 시행일자 표기 차이가 변경으로 잡힐 수 있다.
 """
 import json
 import os
@@ -91,10 +95,21 @@ def fetch_current(oc: str, name: str) -> tuple[dict | None, str]:
     return None, "검색 결과에 정확히 일치하는 현행 법령 없음"
 
 
+def fetch_current_web(name: str) -> tuple[dict | None, str]:
+    """fetch_current 와 같은 모양의 결과를 law.go.kr 웹 본문에서 읽는다(키 불필요)."""
+    sys.path.insert(0, str(Path(__file__).parent))
+    import law_web
+    try:
+        return law_web.current_meta(name, refresh=True), ""
+    except Exception as e:  # 조회 실패·화면 구조 변경
+        return None, f"웹 조회 실패: {type(e).__name__} {e}"
+
+
 def main() -> int:
+    web = "--source" in sys.argv and sys.argv[sys.argv.index("--source") + 1:][:1] == ["web"]
     oc = os.environ.get("LAW_OC")
-    if not oc:
-        print("LAW_OC 환경변수가 없습니다.", file=sys.stderr)
+    if not oc and not web:
+        print("LAW_OC 환경변수가 없습니다. (키 없이 돌리려면 --source web)", file=sys.stderr)
         return 1
 
     state = json.loads(STATE_PATH.read_text("utf-8")) if STATE_PATH.exists() else {}
@@ -102,7 +117,7 @@ def main() -> int:
     failures: list[str] = []
 
     for name in TRACKED_LAWS:
-        cur, reason = fetch_current(oc, name)
+        cur, reason = fetch_current_web(name) if web else fetch_current(oc, name)
         if cur is None:
             print(f"[실패] {name} — {reason}", file=sys.stderr)
             failures.append(name)

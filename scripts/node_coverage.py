@@ -13,9 +13,13 @@
   2호(건축물)가 비어 있는 것이 재산세 30/30 뒤에 가려졌다. 그래서 한 단계 더 내려가 센다:
   같은 항(또는 호) 아래에 호(또는 목) 단위 노드가 하나라도 있으면, 그 형제 호·목은 전부 노드가 있거나
   "왜 없어도 되는지"가 data/coverage/subunit_dispositions.json 에 적혀 있어야 한다.
-  형제 목록의 정본은 data/coverage/subunits.json(법제처 원문의 항·호·목 구조)이다. 그 파일에 없는 조문은
+  형제 목록의 정본은 data/coverage/subunits.json(법령 원문의 항·호·목 구조 — coverage_audit.py 가 만든다)이다. 그 파일에 없는 조문은
   노드 번호만으로 사이 구멍(1·3호는 있는데 2호가 없음)을 찾는다 — 이때 맨 뒤 형제는 못 본다.
   조·항 단위 노드 하나가 각 호를 통째로 담은 조문은 점검하지 않는다(쪼갠 조문만 본다).
+
+요약표 밖 (2026-11-18)
+  세목별 요약표는 제목 키워드로 '세액영향'이라 분류된 범위 안 조문만 센다. 분류가 '혼합'·'미분류'·'절차'인 조문,
+  범위밖 조문, TAX_LAWS 에 없는 법령·장의 조문은 노드가 있든 없든 표에 안 나온다 — '요약표에 들지 않는 조문' 절이 그것을 적는다.
 
 사용
   py scripts/node_coverage.py                 # docs/NODE_COVERAGE.md 생성
@@ -136,7 +140,7 @@ def build(audit: dict, nodes: dict) -> dict:
     for n in nodes.values():
         by_article[(n.법령,) + _article_key(n.조)].append(n)
 
-    report = {"법령": {}, "요약": {}}
+    report = {"법령": {}, "요약": {}, "판": {law: info["판"] for law, info in audit.items() if info.get("판")}}
     for law, info in audit.items():
         rows = []
         for a in info["조문"]:
@@ -169,6 +173,62 @@ def build(audit: dict, nodes: dict) -> dict:
                              "미착수(코퍼스無)": tot - corp,
                              "감사없음": [law for law, _ in laws if law not in audit]}
     return report
+
+
+def outside_counts(report: dict) -> dict:
+    """세목별 요약표에 들지 않는 조문을 모은다 — 표가 조용히 빠뜨리는 것을 보이게 하려는 것이다.
+
+    요약표는 "범위밖이 아니고, 제목 분류가 '세액영향'이며, TAX_LAWS 의 법령·장에 드는" 조문만 센다.
+    노드있음  실행 노드는 있는데 그 조건에 안 들어 표에 안 잡히는 조문 [(법령, 조, 제목, 이유)]
+    노드없음  범위 안·세목 안인데 분류가 '세액영향'이 아니라 표에 안 잡히고 실행 노드도 없는 조문
+              [(세목, 법령, 조, 제목, 분류, 코퍼스)] — 분류는 제목 키워드라 '혼합'·'미분류'에 세액 조문이 섞여 있다
+    """
+    tax_of = defaultdict(list)
+    for tax, laws in TAX_LAWS.items():
+        for law, chapter in laws:
+            tax_of[law].append((tax, chapter))
+    with_node, without = [], []
+    for law, rows in report["법령"].items():
+        for r in rows:
+            taxes = [t for t, ch in tax_of.get(law, []) if not ch or ch in (r["장"] or "")]
+            if r["실행노드"]:
+                why = ("범위밖: " + r["범위밖"]) if r["범위밖"] else ("세목표에 없는 법령·장" if not taxes else
+                                                             ("분류 '%s'" % r["분류"]) if r["분류"] != "세액영향" else "")
+                if why:
+                    with_node.append((law, r["조"], r["제목"], why))
+            elif taxes and not r["범위밖"] and r["분류"] != "세액영향":
+                without.append((taxes[0], law, r["조"], r["제목"], r["분류"], r["코퍼스"]))
+    return {"노드있음": with_node, "노드없음": without}
+
+
+def render_outside(out: dict) -> list[str]:
+    lines = ["## 요약표에 들지 않는 조문", "",
+             "세목별 요약표는 조문 제목의 키워드로 '세액영향'이라 분류된 조문만 센다(`scripts/coverage_audit.py`의 `classify`). "
+             "그 분류에서 벗어난 조문은 노드가 있어도, 없어도 표에 나타나지 않는다 — 여기 따로 적는다.", "",
+             "- 실행 노드는 있는데 표에 안 잡히는 조문: **%d개**" % len(out["노드있음"]),
+             "- 범위 안인데 분류가 '혼합'·'미분류'·'절차'라 표에 안 잡히고 실행 노드도 없는 조문: **%d개** "
+             "(혼합 %d · 미분류 %d · 절차 %d, 그중 코퍼스에 있는 것 %d)" % (
+                 len(out["노드없음"]), sum(1 for x in out["노드없음"] if x[4] == "혼합"),
+                 sum(1 for x in out["노드없음"] if x[4] == "미분류"), sum(1 for x in out["노드없음"] if x[4] == "절차"),
+                 sum(1 for x in out["노드없음"] if x[5])), "",
+             "<details><summary>실행 노드는 있는데 표에 안 잡히는 조문 (%d)</summary>" % len(out["노드있음"]), "",
+             "| 조문 | 표에 안 잡히는 이유 |", "|---|---|"]
+    for law, jo, title, why in out["노드있음"]:
+        lines.append("| %s §%s %s | %s |" % (law, jo, title, why))
+    lines += ["", "</details>", ""]
+    for label, pick in (("코퍼스에 있고 실행 노드가 없는 조문 — 분류가 '세액영향'이 아니어서 전환 대기에 오르지 않는다", lambda x: x[5]),
+                        ("코퍼스에도 없는 조문 — 분류 '혼합'·'미분류'", lambda x: not x[5] and x[4] != "절차"),
+                        ("코퍼스에도 없는 조문 — 분류 '절차'", lambda x: not x[5] and x[4] == "절차")):
+        items = [x for x in out["노드없음"] if pick(x)]
+        lines += ["<details><summary>%s (%d)</summary>" % (label, len(items)), ""]
+        cur = None
+        for tax, law, jo, title, kind, _ in items:
+            if tax != cur:
+                cur = tax
+                lines += ["", "**%s**" % tax, ""]
+            lines.append("- [ ] %s §%s %s (%s)" % (law, jo, title, kind))
+        lines += ["", "</details>", ""]
+    return lines
 
 
 def _호키(h: str):
@@ -324,8 +384,13 @@ def render(report: dict, node_count: int, sub: dict | None = None) -> str:
     없음 = sorted({law for s in report["요약"].values() for law in s.get("감사없음", [])})
     if 없음:
         out += ["'—'는 아직 세지 못한 세목이다: %s 이(가) `data/coverage/coverage_audit.json`에 없다. "
-                "`LAW_OC=… py scripts/coverage_audit.py %s` 를 돌린 뒤 이 스크립트를 다시 돌리면 채워진다." % (
-                    "·".join(없음), " ".join('"%s"' % x for x in 없음)), ""]
+                "`py scripts/coverage_audit.py --source web %s`(키가 있으면 `LAW_OC=…` 와 함께 `--source` 없이)를 돌린 뒤 "
+                "이 스크립트를 다시 돌리면 채워진다." % ("·".join(없음), " ".join('"%s"' % x for x in 없음)), ""]
+    판 = report.get("판") or {}
+    if 판:
+        out += ["조문 목록의 기준 판: " + " · ".join(
+            "%s %s 시행(MST %s)" % (law, v.get("시행", ""), v.get("MST", "")) for law, v in 판.items()
+            if any(law == l for laws in TAX_LAWS.values() for l, _ in laws)) + ".", ""]
     if sub is not None:
         out += ["위 표는 조(條) 단위다. 조 안의 호·목 누락은 아래 '호·목 점검'이 따로 센다 — "
                 "**호·목 전환 대기 %d개**." % len(sub["미처리"]), ""]
@@ -343,6 +408,8 @@ def render(report: dict, node_count: int, sub: dict | None = None) -> str:
 
     if sub is not None:
         out += render_subunits(sub)
+
+    out += render_outside(outside_counts(report))
 
     out += ["## 실행 노드가 있는 조문", ""]
     seen = set()
@@ -394,6 +461,9 @@ def main() -> int:
             continue
         print("%-8s 세액영향 %3d · 코퍼스 %3d · 실행노드 %3d · 전환대기 %3d · 미착수 %3d" % (
             tax, s["세액영향조문"], s["코퍼스"], s["실행노드"], s["전환대기(코퍼스有)"], s["미착수(코퍼스無)"]))
+    oc = outside_counts(report)
+    print("요약표 밖    노드 있는 조문 %d · 범위 안인데 분류 때문에 빠지고 노드도 없는 조문 %d (코퍼스有 %d)" % (
+        len(oc["노드있음"]), len(oc["노드없음"]), sum(1 for x in oc["노드없음"] if x[5])))
     print("호·목 점검  부모 %d(원문 대조 %d) · 노드 없는 형제 %d · 사유 있음 %d · 전환 대기 %d" % (
         sub["점검부모"], sub["정본부모"], len(sub["미처리"]) + len(sub["처리"]), len(sub["처리"]), len(sub["미처리"])))
     for g in sub["미처리"]:
