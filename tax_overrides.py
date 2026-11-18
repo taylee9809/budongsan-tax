@@ -3,11 +3,20 @@
 
 tax_server.py 는 비공개 생성기(server.py → scripts/extract_tax_server.py)가 만드는 파일이라 이 저장소에서 손으로 고치지
 않는다. 2026-11-18 에 원본을 고쳐 다시 생성하면서 결함 95·97·98(종부세 공제 0원, 법인 취득세)과 래퍼가 떨어뜨리던 판정기
-인자 31개(findings 120)는 생성 파일 쪽에서 해소됐다. 여기 남은 대체는 공개 저장소의 판정기가 원본보다 앞서 있어서
-(공개판에만 있는 인자) 생성 래퍼가 아직 넘기지 못하는 두 도구다.
+인자 31개(findings 120)는 생성 파일 쪽에서 해소됐다. 여기 남은 대체는 공개 저장소의 판정기·조문 노드가 원본보다 앞서 있어서
+(공개판에만 있는 인자) 생성 래퍼가 아직 넘기지 못하는 도구다. 계산은 여기서 새로 짜지 않는다 — 판정기·노드를 그대로 부른다.
 
-  judge_transfer_reliefs 판정기가 받는 한시 배제 나목 인자(토지거래허가·6개월 지역·소재지)와 보유 목록(holdings)을 넘긴다.
-  count_heavy_homes      양도 주택을 지정하면 주택 목록으로 중과 대상·가산세율까지 본다(조문 노드 중과세율_판정).
+  judge_transfer_reliefs            한시 배제 나목 인자(토지거래허가·6개월 지역·소재지)와 보유 목록(holdings)을 넘긴다.
+  count_heavy_homes                 양도 주택을 지정하면 주택 목록으로 중과 대상·가산세율까지 본다(조문 노드 중과세율_판정).
+  judge_temporary_two_homes         조정대상지역 공고일(영 §155①1호 대괄호, 2026-09-30 개정).
+  judge_acquisition_homes_and_rate  종전 주택등의 조정대상지역 여부·신규 주택 계약일·계약금 지급일(영 §28의5①, 2026-09-30 개정).
+  judge_155_special                 양도일 현재 세대 주택 수(homes_at_sale).
+  judge_156_3_from_portfolio        분양권 완공 여부·그 밖의 주택 수 직접 지정(판정기가 **kw 로 받는 인자).
+  calc_attached_land_limit          멸실된 상속주택의 정착면적·양도일(조문 노드 소득세법시행령-155-2-멸실신축-b).
+  calc_property_tax                 지방세특례제한법 경감과의 비교(조문 노드 지방세법-111의2-4) — 감면유형을 주면 노드 합성(재산세_주택)의 결과.
+
+대체로 메운 인자는 docs/WRAPPER_GAPS.md(scripts/wrapper_gaps.py 가 만든다)에 "원본 래퍼에 되돌릴 목록"으로 적혀 있다.
+원본(server.py)을 고쳐 다시 생성하면 그 도구의 대체를 여기서 걷어낸다.
 
 대체 목록은 OVERRIDES 한 곳이다. 호스팅 서버(tax_http.make_server), stdio 진입점(tax_full), 케이스 실행기
 (scripts/verify_tool_cases.py)가 이 표를 읽는다. 대체 도구의 인자가 원래 도구 인자의 상위집합인지는
@@ -119,8 +128,180 @@ def count_heavy_homes(
     return r
 
 
+def judge_temporary_two_homes(
+    prev_acquired: str,
+    new_acquired: str,
+    prev_sale_date: str | None = None,
+    prev_meets_exemption: bool = True,
+    one_year_rule_waived: bool = False,
+    prev_in_adjusted_area: bool = False,
+    new_in_adjusted_area: bool = False,
+    moved_in_within_1y: bool | None = None,
+    moved_in_date: str | None = None,
+    new_home_tenant_lease_end: str | None = None,
+    new_contract_date: str | None = None,
+    other_homes_at_acquisition: int = 0,
+    prev_adjusted_after_new_contract: bool = False,
+    merged_homes_at_acquisition: int = 0,
+    merge_kind: str | None = None,
+    merge_date: str | None = None,
+    other_homes_at_sale: int = 0,
+    new_right_acquired: str | None = None,
+    adjusted_area_notice_date: str | None = None,
+) -> dict:
+    """영 §155① 일시적 2주택. 설명은 hosted_descriptions.DESCRIPTIONS["judge_temporary_two_homes"]."""
+    return _tj.judge_temporary_two_homes(
+        prev_acquired, new_acquired, prev_sale_date, prev_meets_exemption, one_year_rule_waived,
+        prev_in_adjusted_area, new_in_adjusted_area, moved_in_within_1y, moved_in_date,
+        new_home_tenant_lease_end, new_contract_date,
+        other_homes_at_acquisition=other_homes_at_acquisition,
+        prev_adjusted_after_new_contract=prev_adjusted_after_new_contract,
+        merged_homes_at_acquisition=merged_homes_at_acquisition, merge_kind=merge_kind, merge_date=merge_date,
+        other_homes_at_sale=other_homes_at_sale, new_right_acquired=new_right_acquired,
+        adjusted_area_notice_date=adjusted_area_notice_date)
+
+
+def judge_155_special(
+    kind: str,
+    event_date: str = "",
+    sale_date: str = "",
+    homes_mine: int = 1,
+    homes_spouse_or_parent: int = 1,
+    parent_max_age_at_merge: int | None = None,
+    separate_household_at_inheritance: bool = True,
+    general_home_acquired_before_inheritance: bool = True,
+    is_first_priority_inherited: bool = True,
+    gifted_within_2y_before_inheritance: bool = False,
+    rental_registered: bool = False,
+    residence_years_in_home: float = 0.0,
+    first_time_use: bool = True,
+    excluded_homes_mine: int = 0,
+    excluded_homes_spouse_or_parent: int = 0,
+    parent_is_female: bool = False,
+    merged_for_parent_care: bool = False,
+    held_before_merge: bool = True,
+    designated_by_agreement: bool = False,
+    homes_at_sale: int | None = None,
+) -> dict:
+    """영 §155 특례(혼인·동거봉양·상속주택·거주주택). 설명은 hosted_descriptions.DESCRIPTIONS["judge_155_special"]."""
+    return _tj.judge_155_special(
+        kind, event_date, sale_date, homes_mine, homes_spouse_or_parent, parent_max_age_at_merge,
+        separate_household_at_inheritance, general_home_acquired_before_inheritance, is_first_priority_inherited,
+        gifted_within_2y_before_inheritance, rental_registered, residence_years_in_home, first_time_use,
+        excluded_homes_mine, excluded_homes_spouse_or_parent, parent_is_female, merged_for_parent_care,
+        held_before_merge, designated_by_agreement, homes_at_sale=homes_at_sale)
+
+
+def judge_156_3_from_portfolio(
+    items: list[dict],
+    sale_date: str,
+    new_home_completed: str = "",
+    moved_in_date: str = "",
+    continuous_residence_years: float = 0.0,
+    holding_waiver_reason: str = "",
+    sale_delay_reason: str = "",
+    delay_state_at_3y: bool = False,
+    sold_by_that_method: bool = False,
+    partial_move_reason: str = "",
+    bunyang_already_completed: bool = False,
+    other_homes: int | None = None,
+    excluded_homes: int | None = None,
+) -> dict:
+    """보유 목록으로 영 §156의3 판정. 설명은 hosted_descriptions.DESCRIPTIONS["judge_156_3_from_portfolio"]."""
+    kw = dict(new_home_completed=new_home_completed, moved_in_date=moved_in_date,
+              continuous_residence_years=continuous_residence_years, holding_waiver_reason=holding_waiver_reason,
+              sale_delay_reason=sale_delay_reason, delay_state_at_3y=delay_state_at_3y,
+              sold_by_that_method=sold_by_that_method, partial_move_reason=partial_move_reason)
+    if bunyang_already_completed:
+        kw["bunyang_already_completed"] = True
+    # 주택 수는 판정기가 목록에서 센다 — 직접 준 값(None 이 아닌 것)만 그 산정을 덮어쓴다.
+    if other_homes is not None:
+        kw["other_homes"] = other_homes
+    if excluded_homes is not None:
+        kw["excluded_homes"] = excluded_homes
+    return _tj.judge_156_3_from_portfolio(items, sale_date, **kw)
+
+
+def calc_attached_land_limit(
+    building_footprint_m2: float,
+    land_area_m2: float,
+    is_urban_area: bool = True,
+    is_capital_region: bool = True,
+    urban_zone: str = "주거상업공업",
+    demolished_inherited_footprint_m2: float | None = None,
+    sale_date: str = "",
+) -> dict:
+    """주택 부수토지 비과세 한도. 설명은 hosted_descriptions.DESCRIPTIONS["calc_attached_land_limit"]."""
+    return _tj.calc_attached_land_limit(
+        building_footprint_m2, land_area_m2, is_urban_area, is_capital_region, urban_zone,
+        demolished_inherited_footprint_m2=demolished_inherited_footprint_m2, sale_date=sale_date)
+
+
+# ───────────────────────────────────────────────────────────────── 취득세
+def judge_acquisition_homes_and_rate(
+    homes: list[dict],
+    in_adjusted_area: bool,
+    is_corporation: bool = False,
+    exclusive_area_m2: float | None = None,
+    acquire_date: str | None = None,
+    prev_disposal_date: str | None = None,
+    prev_disposal_kind: str = "매각",
+    disposal_to_same_household: bool = False,
+    new_home_for_rental: bool = False,
+    is_gift: bool = False,
+    gift_std_value: int = 0,
+    gift_from_one_home_household_to_family: bool = False,
+    prev_home_in_adjusted_area: bool | None = None,
+    new_contract_date: str | None = None,
+    new_deposit_paid_date: str | None = None,
+) -> dict:
+    """취득세 주택 수·일시적 2주택·세율. 설명은 hosted_descriptions.DESCRIPTIONS["judge_acquisition_homes_and_rate"]."""
+    return _tj.judge_acquisition_homes_and_rate(
+        homes, in_adjusted_area, is_corporation, exclusive_area_m2, acquire_date, prev_disposal_date,
+        prev_disposal_kind, disposal_to_same_household, new_home_for_rental, is_gift, gift_std_value,
+        gift_from_one_home_household_to_family,
+        prev_home_in_adjusted_area=prev_home_in_adjusted_area, new_contract_date=new_contract_date,
+        new_deposit_paid_date=new_deposit_paid_date)
+
+
+# ───────────────────────────────────────────────────────────────── 재산세
+def calc_property_tax(
+    official_price: int,
+    year: int,
+    prev_year_official_price: int = 0,
+    one_home: bool = False,
+    fair_market_ratio: float = 0.0,
+    tax_brackets: list[dict] | None = None,
+    urban_area_rate: float = -1.0,
+    local_education_tax_rate: float = -1.0,
+    taxable_base_cap: int = 0,
+    jiteuk_relief_type: str = "",
+    jiteuk_relief_facts: dict | None = None,
+) -> dict:
+    """주택분 재산세. 설명은 hosted_descriptions.DESCRIPTIONS["calc_property_tax"]."""
+    if not jiteuk_relief_type:
+        if jiteuk_relief_facts:
+            return _거부("jiteuk_relief_facts 만 주고 jiteuk_relief_type(감면유형)을 주지 않았다 — 어느 경감 규정과 견줄지 알 수 없다",
+                       "지방세법 §111의2④")
+        return _ts.calc_property_tax(official_price, year, prev_year_official_price, one_home, fair_market_ratio,
+                                     tax_brackets, urban_area_rate, local_education_tax_rate, taxable_base_cap)
+    직접 = [이름 for 이름, 준것 in (("fair_market_ratio", bool(fair_market_ratio)), ("tax_brackets", tax_brackets is not None),
+                               ("urban_area_rate", urban_area_rate >= 0), ("local_education_tax_rate", local_education_tax_rate >= 0),
+                               ("taxable_base_cap", taxable_base_cap > 0)) if 준것]
+    if 직접:
+        return _거부("지방세특례제한법 경감 비교(jiteuk_relief_type)는 상수표의 세율·비율로만 한다 — 직접 지정한 %s 와 함께 쓸 수 없다"
+                   % "·".join(직접), "지방세법 §111의2④ (표준세율 세액과 특례세율 세액을 같은 과세표준에서 견준다)")
+    if official_price <= 0:
+        raise ValueError("official_price는 0보다 커야 합니다")
+    from tax_nodes.jaesan import 재산세_주택
+    return 재산세_주택(official_price, year, prev_year_official_price, one_home,
+                    지방세특례_감면유형=jiteuk_relief_type, 지방세특례_사실=dict(jiteuk_relief_facts or {}))
+
+
 #: 대체 도구 — 이름 → 고친 판 함수. 이름은 생성 서버 도구 이름과 같아야 한다.
-OVERRIDES = {f.__name__: f for f in (judge_transfer_reliefs, count_heavy_homes)}
+OVERRIDES = {f.__name__: f for f in (
+    judge_transfer_reliefs, count_heavy_homes, judge_temporary_two_homes, judge_155_special, judge_156_3_from_portfolio,
+    calc_attached_land_limit, judge_acquisition_homes_and_rate, calc_property_tax)}
 
 
 def replace_tools(source_tools: list, descriptions: dict | None = None) -> list:

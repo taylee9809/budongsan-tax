@@ -2,6 +2,7 @@
 import asyncio
 import inspect
 import itertools
+import json
 
 import pytest
 
@@ -16,7 +17,9 @@ _EMPTY = inspect.Parameter.empty
 
 def test_overrides_name_generated_tools():
     # calc_jongbu_tax·calc_acquisition_tax 는 2026-11-18 원본(server.py)에서 고쳐 다시 생성했다 — 대체하지 않는다
-    assert set(tax_overrides.OVERRIDES) == {"judge_transfer_reliefs", "count_heavy_homes"}
+    assert set(tax_overrides.OVERRIDES) == {
+        "judge_transfer_reliefs", "count_heavy_homes", "judge_temporary_two_homes", "judge_155_special",
+        "judge_156_3_from_portfolio", "calc_attached_land_limit", "judge_acquisition_homes_and_rate", "calc_property_tax"}
     assert set(tax_overrides.OVERRIDES) <= set(SOURCE)
     assert all(fn.__name__ == name for name, fn in tax_overrides.OVERRIDES.items())
 
@@ -37,11 +40,53 @@ def test_override_parameters_are_a_superset(name):
         assert new[p].default is not _EMPTY, "더한 인자 %s 는 기본값이 있어야 한다" % p
 
 
-def test_passthrough_overrides_cover_the_judgment_signature():
-    """판정기를 그대로 부르는 대체 도구는 판정기 인자를 빠짐없이 받는다 — 판정기에 인자가 늘면 깨진다."""
-    judged = inspect.signature(tax_judgment.judge_transfer_reliefs).parameters
-    assert set(judged) <= set(inspect.signature(tax_overrides.judge_transfer_reliefs).parameters)
+#: 판정기를 같은 이름으로 부르지 않는 대체 도구 — 무엇과 대조하는지 따로 적는다.
+#:   count_heavy_homes           판정기는 (items, heavy_tier)뿐이고 나머지는 조문 노드 중과세율_판정에 넘긴다
+#:   judge_156_3_from_portfolio  판정기가 **kw 로 judge_156_3_special 인자를 받는다(앞의 취득일 둘은 목록에서 읽는다)
+#:   calc_property_tax           판정기가 없다 — 생성 도구와 조문 노드 합성(재산세_주택)을 부른다
+_NOT_SAME_NAME = {"count_heavy_homes", "judge_156_3_from_portfolio", "calc_property_tax"}
+
+
+@pytest.mark.parametrize("name", sorted(set(tax_overrides.OVERRIDES) - _NOT_SAME_NAME))
+def test_passthrough_overrides_cover_the_judgment_signature(name):
+    """판정기를 그대로 부르는 대체 도구는 판정기 인자를 빠짐없이 받는다 — 판정기에 인자가 늘면 깨진다(의도한 것)."""
+    judged = inspect.signature(getattr(tax_judgment, name)).parameters
+    assert all(p.kind is p.POSITIONAL_OR_KEYWORD for p in judged.values()), "**kw 판정기는 _NOT_SAME_NAME 에서 따로 대조한다"
+    new = inspect.signature(tax_overrides.OVERRIDES[name]).parameters
+    assert set(judged) <= set(new), sorted(set(judged) - set(new))
+    for p in set(new) - set(inspect.signature(SOURCE[name].fn).parameters):      # 더한 인자의 기본값 = 판정기 기본값
+        assert new[p].default == judged[p].default, p
+
+
+def test_other_overrides_cover_what_they_call():
+    assert set(tax_overrides.OVERRIDES) >= _NOT_SAME_NAME
     assert list(inspect.signature(tax_judgment.count_heavy_homes).parameters) == ["items", "heavy_tier"]
+    kw = inspect.signature(tax_judgment.judge_156_3_from_portfolio).parameters["kw"]
+    assert kw.kind is kw.VAR_KEYWORD
+    special = list(inspect.signature(tax_judgment.judge_156_3_special).parameters)
+    assert special[:3] == ["prior_home_acquired", "bunyang_acquired", "sale_date"]
+    assert set(special[3:]) <= set(inspect.signature(tax_overrides.judge_156_3_from_portfolio).parameters)
+    # 재산세: 노드가 읽는 사실 이름이 그대로인지(바뀌면 대체 도구가 넘기는 키도 바꿔야 한다)
+    import tax_nodes.jaesan as jaesan
+    src = inspect.getsource(jaesan.제111조의2제4항)
+    assert '"지방세특례_감면유형"' in src and '"지방세특례_사실"' in src
+
+
+def test_every_generated_wrapper_gap_is_overridden():
+    """생성 래퍼가 넘기지 못하는 판정기 인자가 새로 생기면 여기서 깨진다 — tax_overrides 에 더하고 docs/WRAPPER_GAPS.md 를 다시 만든다."""
+    import importlib.util
+    import pathlib
+    spec = importlib.util.spec_from_file_location(
+        "wrapper_gaps", pathlib.Path(__file__).resolve().parents[1] / "scripts" / "wrapper_gaps.py")
+    wg = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(wg)
+    rows = wg.audit()
+    assert len(rows) == len(SOURCE) == 43
+    open_gaps = {r["도구"]: r["남은_인자"] for r in rows if r["남은_인자"]}
+    assert open_gaps == {}, open_gaps
+    assert {r["도구"] for r in rows if r["빠진_인자"]} <= set(tax_overrides.OVERRIDES)
+    doc = (pathlib.Path(wg.DOC)).read_text(encoding="utf-8")
+    assert doc == wg.render(rows), "docs/WRAPPER_GAPS.md 가 낡았다 — python scripts/wrapper_gaps.py 로 다시 만든다"
 
 
 def test_hosted_server_serves_the_overrides():
@@ -189,6 +234,217 @@ def test_count_heavy_homes_judges_the_sale_home_from_the_list():
     r = tax_overrides.count_heavy_homes([A, B, C], 2, sale_label="A", sale_date="2026-10-01")
     assert any("계열이 다르다" in x for x in r["플래그"])
     assert tax_overrides.count_heavy_homes([A, B], 2, sale_label="Z")["양도주택_중과판정"]["판정불가"] is True
+
+
+# ───────────────────────────────────────────── 2026-11-19 에 더한 대체 도구 — 기존 호출 호환 격자
+def _same_as_generated(name, grid):
+    n = 0
+    for kw in grid:
+        assert tax_overrides.OVERRIDES[name](**kw) == SOURCE[name].fn(**kw), (name, kw)
+        n += 1
+    return n
+
+
+def _product(**axes):
+    keys = list(axes)
+    return [dict(zip(keys, vals)) for vals in itertools.product(*axes.values())]
+
+
+def test_temporary_two_homes_grid_matches_the_generated_tool():
+    grid = _product(prev_acquired=("2015-03-01", "2025-12-01"), new_acquired=("2019-12-20", "2026-08-03", "2026-08-04", "2026-10-15"),
+                    prev_sale_date=(None, "2021-06-01", "2028-09-01", "2029-03-01", "2029-11-01"),
+                    prev_in_adjusted_area=(False, True), new_in_adjusted_area=(False, True),
+                    new_contract_date=(None, "2026-07-20"), other_homes_at_acquisition=(0, 1),
+                    new_right_acquired=(None, "2026-06-01"))
+    assert _same_as_generated("judge_temporary_two_homes", grid) == 1280
+
+
+def test_temporary_two_homes_notice_date_reaches_the_judgment():
+    base = dict(prev_acquired="2020-01-01", new_acquired="2026-09-01", prev_sale_date="2029-03-01",
+                prev_in_adjusted_area=True, new_in_adjusted_area=True)
+    r = tax_overrides.judge_temporary_two_homes(**base)
+    assert r["특례충족"] is False and r["양도기한연수"] == 2 and r["양도데드라인"] == "2028-09-01"
+    for notice, years in (("2026-09-15", 3), ("2026-09-01", 3), ("2026-08-31", 2)):       # 공고일 이전(당일 포함) 취득이면 3년
+        r = tax_overrides.judge_temporary_two_homes(**base, adjusted_area_notice_date=notice)
+        assert r == tax_judgment.judge_temporary_two_homes(**base, adjusted_area_notice_date=notice)
+        assert (r["양도기한연수"], r["특례충족"]) == (years, years == 3), notice
+    # 계약·계약금 지급이 공고일 이전인 경우도 3년
+    r = tax_overrides.judge_temporary_two_homes(**base, new_contract_date="2026-08-20", adjusted_area_notice_date="2026-08-25")
+    assert r["양도기한연수"] == 3 and "대괄호" in r["적용법령"]
+
+
+_HOMES = [{"라벨": "종전", "종류": "주택", "시가표준액": 500_000_000, "수도권": True},
+          {"라벨": "신규", "종류": "주택", "시가표준액": 700_000_000, "수도권": True, "취득대상": True}]
+
+
+def test_acquisition_homes_grid_matches_the_generated_tool():
+    grid = _product(homes=(_HOMES, _HOMES[1:], _HOMES + [{"라벨": "셋째", "종류": "주택", "시가표준액": 90_000_000, "수도권": True}]),
+                    in_adjusted_area=(False, True), is_corporation=(False, True),
+                    acquire_date=(None, "2025-06-01", "2026-09-30", "2026-10-01", "2026-10-15"),
+                    prev_disposal_date=(None, "2028-09-30", "2029-03-01", "2029-12-01"),
+                    disposal_to_same_household=(False, True), is_gift=(False, True))
+    assert _same_as_generated("judge_acquisition_homes_and_rate", grid) == 960
+
+
+def test_acquisition_temporary_two_homes_new_inputs():
+    base = dict(homes=_HOMES, in_adjusted_area=True, acquire_date="2026-10-15", prev_disposal_date="2029-03-01")
+    f = lambda **more: tax_overrides.judge_acquisition_homes_and_rate(**base, **more)
+    assert f()["일시적2주택"] is None and f()["중과여부"] is True                        # 생성 도구와 같은 보류
+    r = f(prev_home_in_adjusted_area=True)
+    assert r["일시적2주택"] is False and r["취득세율"] == 0.08 and r["일시적2주택_판정"]["처분데드라인"] == "2028-10-15"
+    r = f(prev_home_in_adjusted_area=False)
+    assert r["일시적2주택"] is True and r["중과여부"] is False and r["일시적2주택_판정"]["처분데드라인"] == "2029-10-15"
+    paid = dict(new_contract_date="2026-08-20", new_deposit_paid_date="2026-08-20")
+    assert f(prev_home_in_adjusted_area=True, **paid)["일시적2주택"] is True              # 부칙 §2② — 종전 규정 3년
+    assert f(prev_home_in_adjusted_area=True, new_contract_date="2026-08-20")["일시적2주택"] is False   # 계약금 지급일이 없으면 경과규정 아님
+    assert f(prev_home_in_adjusted_area=True, **paid) == tax_judgment.judge_acquisition_homes_and_rate(
+        **base, prev_home_in_adjusted_area=True, **paid)
+    # 신규 주택이 조정대상지역 밖이면 종전 쪽을 몰라도 3년
+    out = tax_overrides.judge_acquisition_homes_and_rate(**dict(base, in_adjusted_area=False))
+    assert out["일시적2주택"] is True
+    # 2026-10-01 전 취득분은 새 인자와 무관하게 3년
+    old = dict(base, acquire_date="2026-09-30", prev_disposal_date="2029-03-01")
+    assert tax_overrides.judge_acquisition_homes_and_rate(**old, prev_home_in_adjusted_area=True)["일시적2주택"] is True
+
+
+def test_155_special_grid_and_homes_at_sale():
+    grid = _product(kind=("혼인", "동거봉양", "상속주택", "거주주택"), event_date=("2015-03-01", "2021-05-01"),
+                    sale_date=("", "2024-11-11", "2026-03-01", "2032-01-01"), homes_mine=(1, 2), homes_spouse_or_parent=(1, 2),
+                    parent_max_age_at_merge=(None, 58, 65), excluded_homes_mine=(0, 1), rental_registered=(False, True),
+                    residence_years_in_home=(0.0, 3.0))
+    assert _same_as_generated("judge_155_special", grid) == 3072
+    base = dict(kind="혼인", event_date="2020-05-01", sale_date="2026-03-01")
+    plain = tax_overrides.judge_155_special(**base)
+    for n, word in ((3, "늘어난"), (1, "§154①"), (2, "합가 당시")):
+        r = tax_overrides.judge_155_special(**base, homes_at_sale=n)
+        assert r["특례적용"] is plain["특례적용"] is True                                # 요건 판정은 바꾸지 않는다
+        assert r["주택수_판정기준"] == {"합가당시": "1+1", "양도일현재": n} and word in r["플래그"][-1]
+        assert r == tax_judgment.judge_155_special(**base, homes_at_sale=n)
+    r = tax_overrides.judge_155_special(**dict(base, homes_mine=2), homes_at_sale=2)
+    assert r["특례적용"] is False and any("법규과-1599" in x for x in r["플래그"])
+
+
+_PORTFOLIO = [{"라벨": "종전", "종류": "주택", "취득일": "2018-01-01", "양도대상": True},
+              {"라벨": "분양권", "종류": "분양권", "취득일": "2022-03-01"}]
+
+
+def test_156_3_portfolio_grid_and_new_inputs():
+    extra = {"라벨": "농가", "종류": "주택", "취득일": "2019-01-01", "농어촌주택특례": True}
+    plain = {"라벨": "셋째", "종류": "주택", "취득일": "2019-01-01"}
+    grid = _product(items=(_PORTFOLIO, _PORTFOLIO + [extra], _PORTFOLIO + [plain], _PORTFOLIO[:1], []),
+                    sale_date=("2024-06-01", "2025-06-01", "2027-01-01"), new_home_completed=("", "2025-01-10"),
+                    moved_in_date=("", "2025-06-01"), continuous_residence_years=(0.0, 1.5),
+                    sale_delay_reason=("", "법원경매신청"), delay_state_at_3y=(False, True))
+    assert _same_as_generated("judge_156_3_from_portfolio", grid) == 480
+    base = dict(items=_PORTFOLIO, sale_date="2024-06-01")
+    plain_r = tax_overrides.judge_156_3_from_portfolio(**base)
+    assert plain_r["특례적용"] is True and plain_r["주택수산정"]["그 밖의 주택"] == 0
+    r = tax_overrides.judge_156_3_from_portfolio(**base, bunyang_already_completed=True)
+    assert r["특례적용"] is True and any("이미 완공" in x for x in r["플래그"]) and not any("이미 완공" in x for x in plain_r["플래그"])
+    assert tax_overrides.judge_156_3_from_portfolio(**base, other_homes=1)["특례적용"] is False
+    assert tax_overrides.judge_156_3_from_portfolio(**base, other_homes=1, excluded_homes=1)["특례적용"] is True
+    # 0 을 직접 주면 목록에서 센 수(1)를 덮어쓴다 — None(생략)과 다르다
+    listed = dict(items=_PORTFOLIO + [plain], sale_date="2024-06-01")
+    assert tax_overrides.judge_156_3_from_portfolio(**listed)["특례적용"] is False
+    assert tax_overrides.judge_156_3_from_portfolio(**listed, other_homes=0)["특례적용"] is True
+
+
+def test_attached_land_limit_grid_and_rebuilt_inherited_home():
+    grid = _product(building_footprint_m2=(60, 100.5, 150), land_area_m2=(100, 400, 2000), is_urban_area=(True, False),
+                    is_capital_region=(True, False), urban_zone=("주거상업공업", "녹지"))
+    assert _same_as_generated("calc_attached_land_limit", grid) == 72
+    for kw in grid:                                                                  # 양도일만 주면 결과가 바뀌지 않는다
+        assert tax_overrides.calc_attached_land_limit(**kw, sale_date="2021-05-01") == SOURCE["calc_attached_land_limit"].fn(**kw)
+    r = tax_overrides.calc_attached_land_limit(150, 500, demolished_inherited_footprint_m2=80, sale_date="2026-05-01")
+    assert (r["적용배율"], r["비과세_한도면적_m2"], r["초과면적_m2"], r["전부비과세"]) == (3, 240.0, 260.0, False)
+    assert r["신축주택_정착면적_m2"] == 150.0 and "멸실된 상속주택" in r["한도기준"]
+    r = tax_overrides.calc_attached_land_limit(150, 500, demolished_inherited_footprint_m2=80, sale_date="2021-05-01")
+    assert (r["적용배율"], r["비과세_한도면적_m2"]) == (5, 400.0)                       # 2022-01-01 전 양도 — 수도권 도시지역 5배
+    r = tax_overrides.calc_attached_land_limit(150, 500, False, demolished_inherited_footprint_m2=80)
+    assert (r["적용배율"], r["전부비과세"]) == (10, True)
+
+
+_JEONSE = {"전세사기피해자": True, "전세사기피해주택": True}
+_AMOUNTS = ("시가표준액(공시가격)", "공정시장가액비율", "과세표준", "과표상한 적용여부", "적용세율", "누진공제", "재산세 본세",
+            "도시지역분", "지방교육세", "총납부세액", "과세연도")
+_K4 = "지특법 중복 판정(§111의2④)"
+
+
+def test_property_tax_grid_matches_the_generated_tool():
+    flat = [{"upto": None, "rate": 0.002, "deduction": 0}]
+    grid = _product(official_price=(50_000_000, 300_000_000, 900_000_000, 1_500_000_000), year=(2025, 2026),
+                    prev_year_official_price=(0, 280_000_000), one_home=(False, True), fair_market_ratio=(0.0, 0.5),
+                    tax_brackets=(None, flat), urban_area_rate=(-1.0, 0.0), local_education_tax_rate=(-1.0, 0.1),
+                    taxable_base_cap=(0, 100_000_000))
+    assert _same_as_generated("calc_property_tax", grid) == 1024
+    with pytest.raises(ValueError):
+        tax_overrides.calc_property_tax(0, 2026)
+    with pytest.raises(ValueError):
+        tax_overrides.calc_property_tax(0, 2026, jiteuk_relief_type="전세사기피해자")
+
+
+def test_property_tax_relief_comparison_is_the_node_result():
+    from tax_nodes.jaesan import 재산세_주택
+    r = tax_overrides.calc_property_tax(300_000_000, 2026, one_home=True, jiteuk_relief_type="전세사기피해자",
+                                        jiteuk_relief_facts=dict(_JEONSE, 전용면적=59))
+    assert r == 재산세_주택(300_000_000, 2026, 0, True, 지방세특례_감면유형="전세사기피해자", 지방세특례_사실=dict(_JEONSE, 전용면적=59))
+    assert r["재산세 본세"] == 163_500 and r[_K4]["특례세율_배제"] is True and r[_K4]["지특법경감후_세액"] == 81_750
+    assert "감면 전 금액" in r[_K4]["주의"]
+    # 비교 결과가 특례세율이거나 비교 대상이 아니면 금액은 생성 도구와 같다
+    seen = {"특례": 0, "지특": 0, "비교없음": 0}
+    for price, prev, one, kind, facts in itertools.product(
+            (60_000_000, 300_000_000, 900_000_000, 1_200_000_000), (0, 280_000_000), (False, True),
+            ("전세사기피해자", "주택연금담보주택", "없는유형"),
+            (dict(_JEONSE, 전용면적=59), dict(_JEONSE, 전용면적=84), {"1가구1주택": True}, None)):
+        new = tax_overrides.calc_property_tax(price, 2026, prev, one, jiteuk_relief_type=kind, jiteuk_relief_facts=facts)
+        old = tax_server.calc_property_tax(price, 2026, prev, one)
+        if _K4 in new and new[_K4]["특례세율_배제"]:
+            seen["지특"] += 1
+            assert new["재산세 본세"] == new[_K4]["표준세율_세액"] >= old["재산세 본세"]
+            assert new["과세표준"] == old["과세표준"] and new["도시지역분"] == old["도시지역분"]
+        else:
+            seen["특례" if _K4 in new else "비교없음"] += 1
+            assert {k: new[k] for k in _AMOUNTS} == {k: old[k] for k in _AMOUNTS}, (price, prev, one, kind, facts)
+            assert _K4 in new or any(m["표기"] == "지방세법 §111의2④" for m in new["미적용 조문"])
+    assert all(seen.values()), seen
+
+
+def test_property_tax_relief_refuses_what_it_cannot_compare():
+    r = tax_overrides.calc_property_tax(300_000_000, 2026, one_home=True, jiteuk_relief_type="전세사기피해자", fair_market_ratio=0.5)
+    assert r["계산불가"] is True and "fair_market_ratio" in r["사유"] and "재산세 본세" not in r
+    r = tax_overrides.calc_property_tax(300_000_000, 2026, one_home=True, jiteuk_relief_facts=_JEONSE)
+    assert r["계산불가"] is True and "jiteuk_relief_type" in r["사유"] and "총납부세액" not in r
+
+
+def test_new_override_arguments_are_described():
+    """더한 인자는 호스팅 설명에 이름이 나온다 — 설명에 없으면 모델이 그 인자를 모른다."""
+    from hosted_descriptions import DESCRIPTIONS
+    for name, fn in tax_overrides.OVERRIDES.items():
+        old = inspect.signature(SOURCE[name].fn).parameters
+        for p in inspect.signature(fn).parameters:
+            if p not in old:
+                assert p in DESCRIPTIONS[name], (name, p)
+    for key in ("종전_조정대상지역", "신규_조정대상지역", "신규계약일", "신규계약금지급일", "신규권리취득일", "조정대상지역_공고일"):
+        assert key in DESCRIPTIONS["judge_jongbu_one_home_status"], key
+
+
+def test_new_overrides_through_the_server():
+    server = tax_http.make_server()
+
+    def call(name, args):
+        out = asyncio.run(server.call_tool(name, args))
+        return out[1] if isinstance(out, tuple) else json.loads(out[0].text)
+
+    props = {t.name: t.parameters["properties"] for t in server._tool_manager.list_tools()}
+    assert "adjusted_area_notice_date" in props["judge_temporary_two_homes"]
+    assert {"prev_home_in_adjusted_area", "new_contract_date", "new_deposit_paid_date"} <= set(props["judge_acquisition_homes_and_rate"])
+    assert "homes_at_sale" in props["judge_155_special"] and "jiteuk_relief_type" in props["calc_property_tax"]
+    r = call("judge_acquisition_homes_and_rate", {"homes": _HOMES, "in_adjusted_area": True, "acquire_date": "2026-10-15",
+                                                  "prev_disposal_date": "2029-03-01", "prev_home_in_adjusted_area": False})
+    assert r["일시적2주택"] is True
+    r = call("calc_property_tax", {"official_price": 300_000_000, "year": 2026, "one_home": True,
+                                   "jiteuk_relief_type": "전세사기피해자", "jiteuk_relief_facts": dict(_JEONSE, 전용면적=59)})
+    assert r["재산세 본세"] == 163_500
 
 
 # ───────────────────────────────────────────────────────────── stdio 진입점
