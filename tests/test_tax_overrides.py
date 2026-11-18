@@ -15,8 +15,8 @@ _EMPTY = inspect.Parameter.empty
 
 
 def test_overrides_name_generated_tools():
-    assert set(tax_overrides.OVERRIDES) == {"calc_jongbu_tax", "calc_acquisition_tax", "judge_transfer_reliefs",
-                                            "count_heavy_homes"}
+    # calc_jongbu_tax·calc_acquisition_tax 는 2026-11-18 원본(server.py)에서 고쳐 다시 생성했다 — 대체하지 않는다
+    assert set(tax_overrides.OVERRIDES) == {"judge_transfer_reliefs", "count_heavy_homes"}
     assert set(tax_overrides.OVERRIDES) <= set(SOURCE)
     assert all(fn.__name__ == name for name, fn in tax_overrides.OVERRIDES.items())
 
@@ -64,7 +64,7 @@ def test_jongbu_unspecified_and_positive_deduction_match_the_generated_tool():
             (1, 3), (0, 66), (0, 12), (None, 600_000_000)):
         kw = dict(prev_year_official_price=prev, one_home=one, home_count=n, age=age, holding_years=hold)
         assert (tax_overrides.calc_jongbu_tax(price, 2026, basic_deduction=ded, **kw)
-                == tax_server.calc_jongbu_tax(price, 2026, basic_deduction=ded or 0, **kw))
+                == tax_server.calc_jongbu_tax(price, 2026, basic_deduction=ded, **kw))
 
 
 def test_jongbu_zero_deduction_is_zero():
@@ -72,8 +72,8 @@ def test_jongbu_zero_deduction_is_zero():
     r = tax_overrides.calc_jongbu_tax(600_000_000, 2026, basic_deduction=0, tax_brackets=flat)
     assert (r["공제금액"], r["과세표준"], r["종합부동산세"]) == (0, 360_000_000, 9_720_000)
     assert len(r["경고"]) == 1 and "§8①2호" in r["경고"][0]
-    # 생성 도구는 같은 호출에 9억을 공제한다(finding 95) — 기록
-    assert tax_server.calc_jongbu_tax(600_000_000, 2026, basic_deduction=0, tax_brackets=flat)["과세표준"] == 0
+    # 생성 도구도 원본을 고쳐 다시 만든 뒤로 같은 답을 낸다(finding 95 해소, 2026-11-18)
+    assert tax_server.calc_jongbu_tax(600_000_000, 2026, basic_deduction=0, tax_brackets=flat)["과세표준"] == 360_000_000
     # 공제 0원 + 직전 연도 가격 → 상한이 걸리면 그 사실을 경고한다(금액은 원래 함수의 계산)
     r = tax_overrides.calc_jongbu_tax(2_000_000_000, 2026, basic_deduction=0, prev_year_official_price=1_000_000_000)
     assert r["세부담상한 적용여부"] and any("§10 단서" in w for w in r["경고"]) and any("§9①" in w for w in r["경고"])
@@ -111,11 +111,12 @@ def test_acquisition_differs_only_by_refusing_heavy_type_on_non_housing():
             (300_000_000, 750_000_000, 2_000_000_000), kinds,
             ("", "법인", "2주택조정_또는_3주택비조정", "3주택이상조정_또는_4주택이상비조정"), (0, 60, 100),
             ("", "재산분할", "없음")):
-        old = _acq(tax_server.calc_acquisition_tax, price, 2026, kind, heavy, area, rate_special=special)
         new = _acq(tax_overrides.calc_acquisition_tax, price, 2026, kind, heavy, area, rate_special=special)
-        if old != new:
-            assert heavy and kind != "주택유상" and new["계산불가"] is True and "취득세" not in new, (kind, heavy, special)
+        if isinstance(new, dict) and new.get("계산불가"):
+            assert heavy and kind != "주택유상" and "취득세" not in new, (kind, heavy, special)
             refused += 1
+        elif isinstance(new, dict):
+            assert not (heavy and kind != "주택유상"), (kind, heavy, special)
     assert refused
     r = tax_overrides.calc_acquisition_tax(1_000_000_000, 2026, "유상.농지외", heavy_type="법인")
     assert r["계산불가"] is True and "§13의2①" in r["근거"]
@@ -125,10 +126,9 @@ def test_acquisition_differs_only_by_refusing_heavy_type_on_non_housing():
 
 def test_acquisition_warns_on_hand_built_surcharge_without_changing_amounts():
     args = (1_000_000_000, 2026, "유상.농지외")
-    old = tax_server.calc_acquisition_tax(*args, heavy_surcharge_rate=0.04)
     new = tax_overrides.calc_acquisition_tax(*args, heavy_surcharge_rate=0.04)
     warn = new.pop("경고")
-    assert new == old and new["지방교육세"] == 4_000_000
+    assert new["지방교육세"] == 4_000_000 and new["취득세"] == 80_000_000      # 금액은 바꾸지 않는다
     assert len(warn) == 1 and "§13②" in warn[0] and "12,000,000원" in warn[0] and "§151①1호가목" in warn[0]
     # §13② 세율 모양이 아니면 일반 경고
     warn = tax_overrides.calc_acquisition_tax(1_000_000_000, 2026, "주택유상", heavy_surcharge_rate=0.08)["경고"]

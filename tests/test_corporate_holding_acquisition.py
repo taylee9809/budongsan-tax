@@ -51,11 +51,13 @@ def test_no_burden_cap_even_when_price_doubles():
     assert "종합부동산세법 §9②" in r["적용 조문"] and "종합부동산세법 §9⑤" not in r["적용 조문"]
 
 
-def test_generated_tool_cannot_express_corporation_deduction():
-    """구멍의 기록(finding 95): 생성 도구 calc_jongbu_tax 는 basic_deduction=0 을 '미지정'으로 읽어 9억원을 공제한다."""
+def test_generated_tool_reads_zero_deduction_as_zero():
+    """finding 95 해소(2026-11-18): 생성 도구 calc_jongbu_tax 가 basic_deduction=0 을 공제 0원으로 읽는다.
+    종전에는 '미지정'으로 읽어 9억원을 공제했다(공시가격 6억 법인 1주택이 0원)."""
     r = tax_server.calc_jongbu_tax(600_000_000, 2026, basic_deduction=0,
                                    tax_brackets=[{"upto": None, "rate": 0.027, "deduction": 0}])
-    assert r["공제금액"] == 900_000_000 and r["과세표준"] == 0
+    assert r["공제금액"] == 0 and r["과세표준"] == 360_000_000 and r["종합부동산세"] == 9_720_000
+    assert tax_server.calc_jongbu_tax(600_000_000, 2026, is_corporation=True)["계산불가"] is True
     assert jongbu(2026, 600_000_000, 1)["종합부동산세"] == 9_720_000
 
 

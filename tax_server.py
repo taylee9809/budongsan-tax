@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """korea-realestate 세금 판정·계산 MCP 서버 (공개판).
 
-이 파일은 scripts/extract_tax_server.py 가 server.py(비공개 통합 서버, git 6116176)에서
+이 파일은 scripts/extract_tax_server.py 가 server.py(비공개 통합 서버, git 9ecd75a)에서
 세금 도구와 그 의존 정의만 AST로 뽑아 생성한 것이다. 손으로 고치지 말고 생성기를 다시 돌린다.
 도구 43개. 법령·재결례 조회 도구는 .env의 LAW_OC(법제처 Open API 키, 무료)가 있을 때만 동작한다.
 """
@@ -447,6 +447,20 @@ def calc_acquisition_tax(
         if heavy_type not in 표:
             raise ValueError("heavy_type은 %s 중 하나여야 합니다(받은 값: %r)"
                              % (list(표), heavy_type))
+        if not is_housing_sale:
+            # §13의2① 각 호 외의 부분: "주택(…)을 유상거래를 원인으로 취득하는 경우로서 …" — 주택 유상취득이 아니면
+            # 그 세율(8%·12%)을 적용할 수 없다. 종전에는 상가·토지에도 12%를 냈다(2026-11-18, 공개판 findings 98).
+            return {
+                "계산불가": True,
+                "사유": ("heavy_type=%r 은 지방세법 §13의2① 각 호의 유형이고, 그 항은 주택을 유상거래로 취득하는 경우에만 "
+                       "적용된다. acquisition_type=%r 은 주택 유상취득이 아니라 그 세율(8%%·12%%)을 적용할 수 없다. "
+                       "주택(공유지분·부속토지만 취득해도 주택)을 매매 등으로 취득하는 것이면 acquisition_type=\"주택유상\"으로, "
+                       "주택이 아니면 heavy_type 을 비우고 계산한다. 주택이 아닌 부동산을 법인이 대도시에서 취득해 붙는 "
+                       "중과(§13②)는 다른 조문이고 이 계산이 다루지 않는다. 조정대상지역 주택의 무상취득 중과(§13의2②)도 "
+                       "이 인자로 지정할 수 없다." % (heavy_type, acquisition_type)),
+                "근거": "지방세법 §13의2① 각 호 외의 부분 — \"주택(…)을 유상거래를 원인으로 취득하는 경우로서 …\"",
+                "입력": {"acquisition_type": acquisition_type, "heavy_type": heavy_type},
+            }
         배수 = 표[heavy_type]
         src["중과 배수"] = tax_params.cite("취득세.중과.중과기준세율배수", year)
 
@@ -465,6 +479,10 @@ def calc_acquisition_tax(
                                  % list(표준))
             standard_rate = 표준[acquisition_type]
             src["표준세율"] = tax_params.cite("취득세.표준세율", year)
+    # 가산세율을 호출자가 직접 넘겼는가 — 부가세목은 가산 사유를 모르고 계산되므로 결과에 경고를 붙인다(findings 97)
+    _가산_직접 = heavy_surcharge_rate > 0 and not heavy_type and not rate_special
+    _교육세율_직접 = local_education_tax_rate >= 0
+    _농특세율_직접 = rural_special_tax_rate >= 0
     if heavy_surcharge_rate < 0:
         heavy_surcharge_rate = (tax_params.get_param("취득세.중과기준세율", year) * 배수
                                 if heavy_type else 0.0)
@@ -511,6 +529,22 @@ def calc_acquisition_tax(
     if not exclusive_area and rural_special_tax:
         notes.append("전용면적 미전달 — 85㎡ 이하 서민주택이면 농특세가 비과세됩니다"
                      "(농어촌특별세법 §4 11호). exclusive_area를 넘겨 확인하십시오")
+    warnings = []
+    if _가산_직접 and not _교육세율_직접:
+        # §13② 세율 = 표준세율×300% − 중과기준세율×200% → 가산분 = 2×(표준세율 − 중과기준세율)
+        if not is_housing_sale and abs(heavy_surcharge_rate - 2 * (standard_rate - 중과기준)) < 1e-9:
+            _정당 = int(acquisition_price * round(max(standard_rate - 중과기준, 0.0) * 0.2 * 3, 6))
+            warnings.append(
+                "표준세율 %.1f%% + 가산 %.1f%% 는 대도시 법인 중과(지방세법 §13② — 표준세율의 300%%에서 중과기준세율의 200%%를 뺀 세율)와 "
+                "같은 세율이다. 그 중과라면 지방교육세는 본문 산출액의 100분의 300(§151①1호가목)이어서 %s원인데, 이 결과의 지방교육세 "
+                "%s원은 본문 세율로 계산한 값이다(이 계산은 가산 사유를 입력받지 않는다). 금액은 바꾸지 않았다."
+                % (standard_rate * 100, heavy_surcharge_rate * 100, format(_정당, ","), format(local_education_tax, ",")))
+        else:
+            warnings.append(
+                "heavy_surcharge_rate 를 직접 넘겼다. 지방교육세는 가산 사유를 모르는 채 본문 세율((표준세율−2%)×20%, 주택 유상은 "
+                "세율×50%×20%)로 계산했다 — 지방세법 §13②·③·⑥·⑦에 해당하면 본문 산출액의 300%(§151①1호가목), §13의2에 해당하면 "
+                "0.4%(나목)라서 다를 수 있다. 금액은 바꾸지 않았다."
+                + ("" if _농특세율_직접 else " 농어촌특별세도 가산을 반영하지 않고 표준세율 2% 치환분(농어촌특별세법 §5①6호)만 계산했다."))
     return {
         "취득가액": acquisition_price,
         "적용세율(표준+중과+조례)": round(applied_rate, 6),
@@ -527,6 +561,7 @@ def calc_acquisition_tax(
                   "농특세율": round(rural_special_tax_rate, 6)},
         "값 출처": src,
         "주의": " / ".join(notes),
+        **({"경고": warnings} if warnings else {}),
     }
 
 def _apply_brackets(taxable_base: int, tax_brackets: list[dict]) -> tuple[float, int]:
@@ -674,7 +709,7 @@ def calc_jongbu_tax(
     home_count: int = 1,
     age: int = 0,
     holding_years: int = 0,
-    basic_deduction: int = 0,
+    basic_deduction: int | None = None,
     fair_market_ratio: float = 0.0,
     tax_brackets: list[dict] | None = None,
     property_tax_credit: int = -1,
@@ -685,10 +720,17 @@ def calc_jongbu_tax(
     burden_cap_ratio: float = 0.0,
     current_year_property_tax: int = 0,
     rural_special_tax_rate: float = -1.0,
+    is_corporation: bool = False,
 ) -> dict:
     """Korea comprehensive real estate holding tax (종합부동산세) on housing: deductions, progressive rates, property-tax credit, age/holding credits, burden cap.
 
     종합부동산세(주택분)를 계산한다. 세율·공제·비율은 year로 상수표에서 읽는다.
+
+    ⚠️ 2026-11-18 변경 — basic_deduction 의 미지정은 None(생략)이다. 0 은 "공제 0원"으로 계산한다.
+    종전에는 0 을 미지정으로 읽어, 공제 0원이어야 하는 호출(§9②3호 세율 법인)에 9억원이 공제됐다
+    (공시가격 6억 법인 1주택이 0원 — 원문대로면 972만원). is_corporation=True 면 계산하지 않고 이유를
+    돌려준다: 법인은 법인의 종류(§9②1·2호 공익법인등)에 따라 세율·공제가 갈리는데 이 계산은 그 사실을
+    받지 않고, 개인의 누진세율·1세대 1주택 공제·세 부담 상한을 전제로 한다.
 
     ⚠️ 2026-08-30 변경 — year 필수. prev_year_official_price를 주면 재산세액공제
     (영 §4의3)·당해 재산세액·직전연도 총세액상당액(영 §5②)까지 전부 코드가 계산한다.
@@ -733,15 +775,39 @@ def calc_jongbu_tax(
     Returns:
         계산 단계별 dict (검증 가능하도록)
     """
+    if is_corporation:
+        return {
+            "계산불가": True,
+            "사유": ("법인(법인으로 보는 단체 포함)의 주택분 종합부동산세는 이 계산으로 내지 않는다. 법인은 공제금액이 0원이고"
+                   "(종합부동산세법 §8①2호) 세율이 2주택 이하 2.7%, 3주택 이상 5%의 단일세율이며(§9②3호) 세 부담 상한이 없다"
+                   "(§10 단서). 공익법인등·공공주택사업자 등은 다시 개인과 같은 세율·공제 9억원이다(§9②1·2호, §8①3호). "
+                   "이 계산은 그 구분에 필요한 사실(법인의 종류, 공익목적 사용 여부)을 받지 않고, 개인의 누진세율·1세대 1주택 "
+                   "공제·세 부담 상한을 전제로 한다."),
+            "근거": "종합부동산세법 §8①2호 · §9② · §10 단서",
+        }
     if total_official_price <= 0:
         raise ValueError("total_official_price는 0보다 커야 합니다")
+    if basic_deduction is not None and basic_deduction < 0:
+        raise ValueError("basic_deduction은 0 이상이어야 합니다(미지정은 생략 또는 null)")
+    _공제0원_명시 = basic_deduction == 0
+    if _공제0원_명시 and one_home:
+        return {
+            "계산불가": True,
+            "사유": ("one_home=true(1세대 1주택자, 공제 12억원 — 종합부동산세법 §8①1호)와 basic_deduction=0(공제 0원 — §8①2호, "
+                   "§9②3호 세율 법인)은 함께 성립하지 않는다. 개인이면 basic_deduction 을 생략(null)한다 — 공제금액은 표에서 "
+                   "읽는다. 법인이면 이 계산으로 내지 않는다."),
+            "근거": "종합부동산세법 §8① 각 호",
+        }
+    _세율표_미지정 = tax_brackets is None
 
     # ── 1·2층 배선: 미지정 인자는 상수표(연도별)에서 읽는다 ──────────────────
     src = {}
-    if not basic_deduction:
+    if basic_deduction is None:
         deds = tax_params.get_param("종부세.주택.기본공제", year)
         basic_deduction = deds["1세대1주택자" if one_home else "일반"]
         src["기본공제"] = tax_params.cite("종부세.주택.기본공제", year)
+    elif _공제0원_명시:
+        src["기본공제"] = "호출자 지정 0원 (종합부동산세법 §8①2호에 해당하는 경우의 값)"
     if not fair_market_ratio:
         fair_market_ratio = tax_params.get_param("종부세.주택.공정시장가액비율", year)
         src["공정시장가액비율"] = tax_params.cite("종부세.주택.공정시장가액비율", year)
@@ -798,6 +864,7 @@ def calc_jongbu_tax(
                 # 공제금액도 "직전 연도의 법" 값이어야 한다. 호출자가 직접 지정한
                 # 경우(src에 기본공제 출처가 없다)에는 그 값을 그대로 존중한다.
                 basic_deduction_prev=(
+                    0 if _공제0원_명시 else
                     tax_params.get_param("종부세.주택.기본공제", year - 1)[
                         "1세대1주택자" if one_home else "일반"]
                     if "기본공제" in src else None))
@@ -882,7 +949,20 @@ def calc_jongbu_tax(
         "과세연도": year,
         "값 출처": src,
         "주의": " / ".join(notes),
+        **({"경고": _공제0원_경고(_세율표_미지정, cap_applied)} if _공제0원_명시 else {}),
     }
+
+def _공제0원_경고(세율표_미지정: bool, 상한적용: bool) -> list[str]:
+    """basic_deduction=0 을 명시한 종부세 계산에 붙이는 경고 — 공제 0원은 §9②3호 세율 법인뿐이다."""
+    out = ["공제금액 0원으로 계산했다(basic_deduction=0 명시). 공제 0원은 §9②3호 세율이 적용되는 법인뿐이다"
+           "(종합부동산세법 §8①2호) — 개인이면 basic_deduction 을 생략해 9억원·12억원이 적용되게 한다."]
+    if 세율표_미지정:
+        out.append("세율표(tax_brackets)를 주지 않아 개인의 누진세율(§9①)을 적용했다. 공제 0원인 법인의 세율은 "
+                   "2주택 이하 2.7%·3주택 이상 5% 단일세율(§9②3호)이라 이 세액은 법인의 세액이 아니다.")
+    if 상한적용:
+        out.append("세 부담 상한(§10 본문)이 적용돼 세액이 줄었다. §9②3호 세율 법인은 §10 단서로 상한이 없으므로 "
+                   "법인이라면 이 세액은 과소하다.")
+    return out
 
 import tax_judgment as _tj
 
@@ -1041,6 +1121,13 @@ def judge_temporary_two_homes(
     moved_in_date: str | None = None,
     new_home_tenant_lease_end: str | None = None,
     new_contract_date: str | None = None,
+    other_homes_at_acquisition: int = 0,
+    prev_adjusted_after_new_contract: bool = False,
+    merged_homes_at_acquisition: int = 0,
+    merge_kind: str | None = None,
+    merge_date: str | None = None,
+    other_homes_at_sale: int = 0,
+    new_right_acquired: str | None = None,
 ) -> dict:
     """Temporary two-home exemption test: one-year gap, disposal deadline, move-in requirement (Income Tax Decree art. 155(1)).
 
@@ -1054,11 +1141,19 @@ def judge_temporary_two_homes(
     조정지역 여부는 judge_adjusted_area_at_date로 각 취득일·양도일 기준 확인 후 넣을 것.
     날짜는 YYYY-MM-DD. prev_sale_date 생략 시 현행법(3년) 데드라인만 산출. 취득세 일시적
     2주택(영 §28의5, 1년 요건 없음)과 별개라는 세목 분기 플래그 포함.
+
+    판정기에 그대로 넘기는 선택 인자 (2026-11-18 추가 — 종전에는 도구로 넘길 수 없었다):
+      other_homes_at_acquisition: 신규주택 취득 당시 종전주택 외 추가 보유 주택수 — §155①은 '1주택을 소유한 1세대가 신규주택을 취득해 일시적으로 2주택'이 된 경우 전제라, 취득 당시 2주택 이상(3주택 이상이 됐다가 처분으로 2주택을 만든 사안 포함)이면 특례 배제 (대법원 2024두55426 — 확장·유추해석 불가).
+      merged_homes_at_acquisition·merge_kind("혼인"|"동거봉양")·merge_date: other_homes_at_acquisition 중 혼인(영 §155⑤)·동거봉양(영 §155④) 합가로 들어온 주택 수. 합가로 2주택이 된 뒤 신규주택을 취득해 일시 3주택이 된 경우 합가 특례기간 안이면서 신규 취득일부터 기한 내 양도하는 종전주택은 §155①과 ④·⑤를 중첩 적용한다(기재부 재재산-182, 2008.5.16. · 법규과-1289, 2025.6.18.) — 그 수만큼 3주택 배제에서 뺀다.
+      other_homes_at_sale: 양도일 현재 종전·신규 외에 보유한 주택 수(합가분 제외) — §155①은 '일시적으로 2주택이 된 경우'의 종전주택 양도라 양도일 현재 3주택 이상이면 배제(조심2010중3600).
+      new_right_acquired: 신규주택이 분양권에 기한 것이면 그 분양권 취득(계약)일. 2021-01-01 이후 취득 분양권은 주택 수에 들어가므로(법 §88 10호, 법 17477호 부칙) 종전주택 취득 전에 이미 보유했다면 '1주택 세대가 신규주택 취득'한 순서가 아니어서 배제(서면-2021-법규재산-3071 · 부동산납세과-812).
+      prev_adjusted_after_new_contract: 판정기(tax_judgment.judge_temporary_two_homes)의 같은 이름 인자.
     """
     return _tj.judge_temporary_two_homes(
         prev_acquired, new_acquired, prev_sale_date, prev_meets_exemption, one_year_rule_waived,
         prev_in_adjusted_area, new_in_adjusted_area, moved_in_within_1y, moved_in_date,
         new_home_tenant_lease_end, new_contract_date,
+        other_homes_at_acquisition=other_homes_at_acquisition, prev_adjusted_after_new_contract=prev_adjusted_after_new_contract, merged_homes_at_acquisition=merged_homes_at_acquisition, merge_kind=merge_kind, merge_date=merge_date, other_homes_at_sale=other_homes_at_sale, new_right_acquired=new_right_acquired
     )
 
 @mcp.tool(title='Special one-home cases (art. 155)', annotations=ToolAnnotations(title='Special one-home cases (art. 155)', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
@@ -1136,7 +1231,9 @@ def judge_jongbu_one_home_status(other_homes: list[dict], base_date: str = "") -
     return _tj.judge_jongbu_one_home_status(other_homes, base_date)
 
 @mcp.tool(title='Priority inherited home', annotations=ToolAnnotations(title='Priority inherited home', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
-def judge_inherited_house_priority(houses: list[dict]) -> dict:
+def judge_inherited_house_priority(houses: list[dict],
+    demolished_label: str | None = None,
+    agreed_label: str | None = None) -> dict:
     """When a decedent held several homes, pick the single inherited home that gets the special treatment.
 
     피상속인 다주택 시 선순위 상속주택 1개 확정 (영 §155② 1~4호).
@@ -1146,11 +1243,22 @@ def judge_inherited_house_priority(houses: list[dict]) -> dict:
     상속개시 당시 거주 ④거주사실 없고 소유기간 동률이면 기준시가 최고(동률이면 상속인 선택).
     houses 원소: {"라벨", "피상속인_소유기간_년", "피상속인_거주기간_년",
     "상속개시당시_거주": bool, "기준시가": 원}. 결과를 judge_155_special(kind="상속주택")의
-    is_first_priority_inherited로 전달한다. 선순위 아닌 나머지는 주택수에 그대로 산입."""
-    return _tj.judge_inherited_house_priority(houses)
+    is_first_priority_inherited로 전달한다. 선순위 아닌 나머지는 주택수에 그대로 산입.
+
+    판정기에 그대로 넘기는 선택 인자 (2026-11-18 추가 — 종전에는 도구로 넘길 수 없었다):
+      demolished_label: 멸실된 주택 라벨 — 선순위가 멸실돼도 후순위는 승격하지 않는다(조심 2022서1439)
+      agreed_label: 상속인간 협의로 지정하려는 주택 라벨 — 협의로 순위를 바꿀 수 없다(사전-2024-법규재산-0433)
+    """
+    return _tj.judge_inherited_house_priority(houses,
+        demolished_label=demolished_label, agreed_label=agreed_label)
 
 @mcp.tool(title='Co-inherited home owner', annotations=ToolAnnotations(title='Co-inherited home owner', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
-def judge_co_inherited_owner(shares: list[dict]) -> dict:
+def judge_co_inherited_owner(shares: list[dict],
+    is_first_priority: bool | None = None,
+    sale_date: str = '',
+    shares_changed_after_inheritance: bool = False,
+    same_household_at_inheritance: bool = False,
+    care_merge_exception: bool = False) -> dict:
     """Attribute a co-inherited home to one heir under Income Tax Decree art. 155(3).
 
     공동상속주택의 소유자 귀속 판정 (영 §155③).
@@ -1159,8 +1267,16 @@ def judge_co_inherited_owner(shares: list[dict]) -> dict:
     산입하며, 최대자가 2명 이상이면 ①해당 주택 거주자 → ③최연장자 순(2호는 2008 삭제).
     shares 원소: {"상속인", "지분율": 0~1, "해당주택_거주": bool, "나이": int}.
     ⚠️ 세목별로 결론이 갈린다 — 취득세는 최대지분→거주자→연장자(지방세법 영 §28의4⑤),
-    종부세는 소액지분(40%↓ 또는 지분공시가 6억·지방 3억↓)이면 기간 무관 제외(영 §4의2②)."""
-    return _tj.judge_co_inherited_owner(shares)
+    종부세는 소액지분(40%↓ 또는 지분공시가 6억·지방 3억↓)이면 기간 무관 제외(영 §4의2②).
+
+    판정기에 그대로 넘기는 선택 인자 (2026-11-18 추가 — 종전에는 도구로 넘길 수 없었다):
+      is_first_priority: 이 주택이 §155② 선순위 상속주택인지 (피상속인 다주택일 때만 의미 — 상속주택 선순위 판정의 결과). None이면 확인 플래그만 세운다.
+      sale_date: 일반주택 양도일 YYYY-MM-DD — 2017-02-03 경계 판정용. 비우면 현행법 가정.
+      same_household_at_inheritance: 상속개시 당시 상속인이 피상속인과 동일세대였는지 — §155③은 별도 독립세대 전제라 동일세대원 공동상속주택은 불산입 불가 (대법원 2023두53799). care_merge_exception(동거봉양 합가, §155② 단서)만 예외.
+      shares_changed_after_inheritance: 판정기(tax_judgment.judge_co_inherited_owner)의 같은 이름 인자.
+    """
+    return _tj.judge_co_inherited_owner(shares,
+        is_first_priority=is_first_priority, sale_date=sale_date, shares_changed_after_inheritance=shares_changed_after_inheritance, same_household_at_inheritance=same_household_at_inheritance, care_merge_exception=care_merge_exception)
 
 @mcp.tool(title='Attached land limit', annotations=ToolAnnotations(title='Attached land limit', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def calc_attached_land_limit(building_footprint_m2: float, land_area_m2: float,
@@ -1191,6 +1307,7 @@ def judge_reconstruction_membership_transfer(
     decree_reason: str = "",
     is_partial_share_transfer: bool = False,
     is_one_plus_one_small: bool = False,
+    permit_application_date: str = '',
 ) -> dict:
     """Can a redevelopment/reconstruction association membership be transferred in a speculation zone (Urban Renewal Act art. 39).
 
@@ -1203,11 +1320,16 @@ def judge_reconstruction_membership_transfer(
     transfer_notice_done=True(이전고시 후)면 제한 실효 — 단 1+1 소형 60㎡↓는
     is_one_plus_one_small로 §76①7호라목 3년 전매금지 별도 판정.
     transferor_reason: ""|세대이전|상속주택이전|해외이주|지분형주택|공공재개발양도|
-    1세대1주택_소유10년_거주5년|시행령예외(decree_reason으로 §37③ 6세목 지정)."""
+    1세대1주택_소유10년_거주5년|시행령예외(decree_reason으로 §37③ 6세목 지정).
+
+    판정기에 그대로 넘기는 선택 인자 (2026-11-18 추가 — 종전에는 도구로 넘길 수 없었다):
+      permit_application_date: (재개발) 사업시행인가 **최초** 신청일 YYYY-MM-DD — 재개발 제한은 법 14943호 부칙 §1·§2로 2018-01-24 시행 후 최초로 사업시행인가를 신청하는 구역부터. 그 전 신청 구역은 관리처분인가 후에도 제한 없음(구법).
+    """
     return _tj.judge_reconstruction_membership_transfer(
         project_type, in_speculation_overheated_zone, association_established,
         management_disposal_approved, transfer_notice_done, transferor_reason,
         owned_years, resided_years, decree_reason, is_partial_share_transfer, is_one_plus_one_small,
+        permit_application_date=permit_application_date
     )
 
 @mcp.tool(title='One-home exemption requirements', annotations=ToolAnnotations(title='One-home exemption requirements', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
@@ -1314,6 +1436,7 @@ def judge_business_dealer_status(
     business_purpose_advertised: bool = False,
     is_self_built_sale: bool = False,
     is_residential_resale: bool = False,
+    self_built_kind: str = '',
 ) -> dict:
     """Is the seller a real estate dealer (business income) or an individual (capital gains).
 
@@ -1323,10 +1446,15 @@ def judge_business_dealer_status(
     부가가치세법 시행규칙 §2②2호의 **1과세기간(6개월) 중 1회 이상 취득 + 2회 이상 판매**로,
     실무가 소득세 판정에 원용하지만 직접 근거는 부가세법이므로 **스크리닝 전용**이다(단정 금지).
     구입한 주거용 건물의 재판매는 부동산매매업에 포함된다(영 §122① 단서 괄호) — '주택은 매매업이
-    아니다'는 오해 지점. 결과가 갈리면 시나리오 2개(양도소득/사업소득) 병기가 출력 규약."""
+    아니다'는 오해 지점. 결과가 갈리면 시나리오 2개(양도소득/사업소득) 병기가 출력 규약.
+
+    판정기에 그대로 넘기는 선택 인자 (2026-11-18 추가 — 종전에는 도구로 넘길 수 없었다):
+      self_built_kind: 자영건설 판매 시 "주거"|"비주거" — 비주거는 매매업 명문 포함(영 §122①), 주거 신축분양은 건설업(주거용 건물 개발·공급업)이라 양도소득도 매매업도 아니다.
+    """
     return _tj.judge_business_dealer_status(
         acquisitions_in_period, sales_in_period, has_business_registration,
         business_purpose_advertised, is_self_built_sale, is_residential_resale,
+        self_built_kind=self_built_kind
     )
 
 @mcp.tool(title='Dealer comparative tax', annotations=ToolAnnotations(title='Dealer comparative tax', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
@@ -1442,6 +1570,10 @@ def judge_farmland_reduction(
     zone_converted_date: str = "",
     transfer_date: str = "",
     estimated_tax: int = 0,
+    distance_km: float | None = None,
+    inherited_decedent_years: float = 0.0,
+    heir_continuous_1yr: bool = False,
+    inherited_sold_within_3yr: bool = False,
 ) -> dict:
     """Self-cultivated farmland capital gains exemption after 8 years (Special Taxation Act art. 69).
 
@@ -1452,10 +1584,16 @@ def judge_farmland_reduction(
     농가부업소득 제외). 겸업 농민은 달력상 8년을 채워도 탈락하므로 연도별 소득자료가 필요하다.
     재촌 요건은 농지 소재 시·군·구 / 연접 시·군·구 / 직선 30km 이내(영 §66①).
     주거·상업·공업지역 편입 후 3년이 지나면 감면 배제(영 §66④).
-    감면율 100%여도 §133① 한도로 잘리므로 judge_transfer_reduction_limit에 넘길 것."""
+    감면율 100%여도 §133① 한도로 잘리므로 judge_transfer_reduction_limit에 넘길 것.
+
+    판정기에 그대로 넘기는 선택 인자 (2026-11-18 추가 — 종전에는 도구로 넘길 수 없었다):
+      distance_km: 농지↔거주지 직선거리 — 30km는 2015-02-03(영 26070호)부터, 종전 20km (양도일 기준, 조심 2018서2853). resides_within_scope(시군구·연접)와 어느 하나면 충족.
+      inherited_decedent_years: 피상속인(배우자 포함) 경작기간 — 상속인이 1년 이상 계속 경작(heir_continuous_1yr)했거나 상속 후 3년 내 양도(inherited_sold_within_3yr)면 통산 (영 §66⑪⑫). 둘 다 아니면 통산 불가.
+    """
     return _tj.judge_farmland_reduction(
         farming_years_claimed, resides_within_scope, direct_farming, yearly_incomes,
         zone_converted_date, transfer_date, estimated_tax,
+        distance_km=distance_km, inherited_decedent_years=inherited_decedent_years, heir_continuous_1yr=heir_continuous_1yr, inherited_sold_within_3yr=inherited_sold_within_3yr
     )
 
 @mcp.tool(title='Farmland substitution exemption', annotations=ToolAnnotations(title='Farmland substitution exemption', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
@@ -1469,6 +1607,8 @@ def judge_farmland_daeto(
     new_price_ratio: float | None = None,
     is_expropriation: bool = False,
     estimated_tax: int = 0,
+    new_acquired_by_inheritance_or_gift: bool = False,
+    has_income_exclusion_period: bool = False,
 ) -> dict:
     """Farmland substitution exemption (Special Taxation Act art. 70): distance, period, area and value ratios.
 
@@ -1480,10 +1620,16 @@ def judge_farmland_daeto(
     자경농지(§69)와 달리 양도 시점에 8년을 채울 필요가 없고 사후 합산으로 채운다 — 대신 미달 시
     §70④⑤로 2개월 내 추징 + 이자상당액. 재촌 요건 기간도 §69(8년)와 달리 4년이라 혼동 주의.
     감면율 100%여도 §133①2호가목의 **5개 과세기간 1억원** 한도가 별도로 걸린다 —
-    judge_transfer_reduction_limit에 넘겨 최종 감면세액을 확정할 것."""
+    judge_transfer_reduction_limit에 넘겨 최종 감면세액을 확정할 것.
+
+    판정기에 그대로 넘기는 선택 인자 (2026-11-18 추가 — 종전에는 도구로 넘길 수 없었다):
+      new_acquired_by_inheritance_or_gift: 새 농지를 상속·증여로 취득 — §67③1호 괄호로 배제.
+      has_income_exclusion_period: 합산 8년이 차기 전에 §66⑭ 해당(소득 3,700만·총수입 기준 초과) 과세기간 존재 — §67⑥ 후단으로 '계속 경작하지 않은 것'으로 간주(감면 배제·추징).
+    """
     return _tj.judge_farmland_daeto(
         prior_reside_years, transfer_date, new_acquire_date, farming_start_date,
         total_farming_years, new_area_ratio, new_price_ratio, is_expropriation, estimated_tax,
+        new_acquired_by_inheritance_or_gift=new_acquired_by_inheritance_or_gift, has_income_exclusion_period=has_income_exclusion_period
     )
 
 @mcp.tool(title='Homes excluded from the count', annotations=ToolAnnotations(title='Homes excluded from the count', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
@@ -1501,6 +1647,8 @@ def judge_second_home_exclusion(
     acquisition_price: int | None = None,
     first_contract: bool = True,
     seller_is_supplier: bool = True,
+    transfer_date: str = '',
+    land_area_m2: float | None = None,
 ) -> dict:
     """Homes excluded from the home count: rural/hometown house, depopulation-area house, unsold completed house.
 
@@ -1516,11 +1664,17 @@ def judge_second_home_exclusion(
     인구감소지역주택: 취득 2024-01-04~**2026-12-31 일몰**, 기준시가 수도권 밖 9억 /
     수도권 인구감소지역·인구감소관심지역 4억, 종전 주택과 같은 시·군·구면 배제(영 §68의2①).
     종부세 1세대1주택자 간주는 9/16~9/30 별도 신청 필요(§71의2②③).
-    두 특례 모두 특례 주택을 **나중에** 취득해야 적용된다."""
+    두 특례 모두 특례 주택을 **나중에** 취득해야 적용된다.
+
+    판정기에 그대로 넘기는 선택 인자 (2026-11-18 추가 — 종전에는 도구로 넘길 수 없었다):
+      transfer_date: 일반주택 양도일 — §99의4 요건의 연혁 분기 기준(경과규정이 양도일 기준): 기준시가 3억(한옥 4억)은 2023-01-01 이후 양도분부터(법 19199호 경과조치 §39 — 이전 2억), 대지 660㎡ 면적요건 폐지는 2021-01-01 이후 양도분부터(법 17759호 부칙 §21②).
+      land_area_m2: 농어촌주택 대지면적 — 2020-12-31 이전 양도 판정에만 사용.
+    """
     return _tj.judge_second_home_exclusion(
         kind, acquired_date, published_price, is_hanok, in_capital_area,
         same_or_adjacent_area, same_sigungu, holding_years, acquired_after_general_home,
         exclusive_area_m2, acquisition_price, first_contract, seller_is_supplier,
+        transfer_date=transfer_date, land_area_m2=land_area_m2
     )
 
 @mcp.tool(title='First-home acquisition relief', annotations=ToolAnnotations(title='First-home acquisition relief', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
@@ -1534,6 +1688,8 @@ def judge_first_home_acquisition_relief(
     in_depopulation_area: bool = False,
     acquired_date: str = "",
     co_owners: int = 1,
+    in_capital_area: bool = False,
+    household_income: int | None = None,
 ) -> dict:
     """First-time home buyer acquisition tax relief (Local Tax Special Act art. 36-3).
 
@@ -1543,22 +1699,35 @@ def judge_first_home_acquisition_relief(
     미성년자 제외. 감면 한도는 **300만원**(전용 60㎡ 이하 공동주택—아파트 제외·도시형생활주택·
     구분 다가구 60㎡ 호, 인구감소지역 주택) / **200만원**(그 외) 2분류 — 2024-12-31·2025-12-31
     개정으로 생긴 구분이라 '200만원 단일'로 알려진 통설과 다르다.
-    추징: 3개월 내 상시거주 미개시, 또는 3년 내 매각·증여·**임대**(전세 끼는 경로 차단)."""
+    추징: 3개월 내 상시거주 미개시, 또는 3년 내 매각·증여·**임대**(전세 끼는 경로 차단).
+
+    판정기에 그대로 넘기는 선택 인자 (2026-11-18 추가 — 종전에는 도구로 넘길 수 없었다):
+      in_capital_area, household_income: 판정기(tax_judgment.judge_first_home_acquisition_relief)의 같은 이름 인자.
+    """
     return _tj.judge_first_home_acquisition_relief(
         acquisition_price, no_home_history, is_minor, computed_tax, exclusive_area_m2,
         house_type, in_depopulation_area, acquired_date, co_owners,
+        in_capital_area=in_capital_area, household_income=household_income
     )
 
 @mcp.tool(title='Family loan vs gift', annotations=ToolAnnotations(title='Family loan vs gift', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
-def judge_family_loan(loan_amount: int, agreed_interest_rate: float = 0.0) -> dict:
+def judge_family_loan(loan_amount: int, agreed_interest_rate: float = 0.0,
+    loan_date: str = '',
+    is_related: bool = True,
+    justifiable_reason: bool = False) -> dict:
     """Family loan vs gift screening: 4.6% benchmark rate and the 10 million won threshold (Inheritance and Gift Tax Act art. 41-4).
 
     가족 간 차용·무상대출 증여 스크리닝 (상증법 §41의4 — 적정이자율 4.6%·기준 1천만).
 
     연간 증여이익 = 대출금×4.6% − 실제 이자. 1천만 미만이면 과세 제외(무상 기준 약 2.17억).
     차용증·이자 실지급은 취득자금 증여추정(§45) 방어와 세트라는 플래그를 함께 반환.
+
+    판정기에 그대로 넘기는 선택 인자 (2026-11-18 추가 — 종전에는 도구로 넘길 수 없었다):
+      loan_date: 대출일(재대출 간주 시 각 1년 단위 개시일) — 당시 적정이자율로 판정: 4.6%(2016-03-07~) / 6.9%(2012-02-28~) / 8.5%(그 전). 미입력 시 현행 4.6%.
+      is_related=False(비특수관계): 거래관행상 정당한 사유(justifiable_reason)가 있으면 과세 제외(§41의4③) — 사유가 없으면 포괄주의로 과세(조심 2013서1231·2013서0854).
     """
-    return _tj.judge_family_loan(loan_amount, agreed_interest_rate)
+    return _tj.judge_family_loan(loan_amount, agreed_interest_rate,
+        loan_date=loan_date, is_related=is_related, justifiable_reason=justifiable_reason)
 
 @mcp.tool(title='Funding plan requirement', annotations=ToolAnnotations(title='Funding plan requirement', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def judge_fund_plan_requirement(
@@ -1584,6 +1753,7 @@ def format_consultation_report(
     scenarios: list[dict] | None = None,
     dividing_issue: str = "",
     issue_grade: str = "",
+    lead_threshold: int = 5000000,
 ) -> dict:
     """Format a consultation result as a report: conclusion, grounds mapped to sources, tailored Q&A.
 
@@ -1593,8 +1763,13 @@ def format_consultation_report(
     1:1로 매칭(출처 없는 설명은 리포트 전체 거부), 소유자가 물었던 추가 질문들은 §3에
     답변+근거로 정리한다. 쟁점으로 세액이 갈리면 scenarios를 함께 넘겨 결론 아래
     병기(단정 금지 규약 유지 — format_consultation_output 재사용). 쟁점·질문 문구에서
-    해석례 추천검색(search_tax_rulings용 쿼리)을 자동 도출해 '추천검색'으로 반환."""
-    return _tj.format_consultation_report(conclusion, evidences, owner_qa, scenarios, dividing_issue, issue_grade)
+    해석례 추천검색(search_tax_rulings용 쿼리)을 자동 도출해 '추천검색'으로 반환.
+
+    판정기에 그대로 넘기는 선택 인자 (2026-11-18 추가 — 종전에는 도구로 넘길 수 없었다):
+      lead_threshold: 판정기(tax_judgment.format_consultation_report)의 같은 이름 인자.
+    """
+    return _tj.format_consultation_report(conclusion, evidences, owner_qa, scenarios, dividing_issue, issue_grade,
+        lead_threshold=lead_threshold)
 
 @mcp.tool(title='Adjusted area on a date', annotations=ToolAnnotations(title='Adjusted area on a date', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def judge_adjusted_area_at_date(region: str, target_date: str) -> dict:
@@ -2042,6 +2217,8 @@ def judge_156_3_from_portfolio(
 @mcp.tool(title='Relief catalog entry', annotations=ToolAnnotations(title='Relief catalog entry', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def get_relief_catalog_entry(article: str = "", article_id: str = "") -> dict:
     """Look up one relief catalog entry by statute reference.
+
+    Look up one relief catalog entry by statute reference.
 
     감면 카탈로그 한 건 조회 — "지특법 §36의5", "조특97의3", "조세특례제한법 제97조의3" 같은 표기를 받는다.
 
