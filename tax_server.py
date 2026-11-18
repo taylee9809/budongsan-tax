@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """korea-realestate 세금 판정·계산 MCP 서버 (공개판).
 
-이 파일은 scripts/extract_tax_server.py 가 server.py(비공개 통합 서버, git 6116176)에서
-세금 도구와 그 의존 정의만 AST로 뽑아 생성한 것이다. 손으로 고치지 말고 생성기를 다시 돌린다.
+처음에는 비공개 통합 서버(server.py, git 6116176)에서 세금 도구와 그 의존 정의만 AST로 뽑아 만들었다.
+그 생성기는 이 저장소에 없고, 지금은 이 파일을 직접 고친다(도구 추가·수정 모두 여기서).
 도구 46개. 법령·재결례 조회 도구는 .env의 LAW_OC(법제처 Open API 키, 무료)가, 부동산 기초정보 조회 도구(lookup_*)는
 JUSO_API_KEY·VWORLD_API_KEY가 있을 때만 동작한다.
 """

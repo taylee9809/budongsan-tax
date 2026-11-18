@@ -23,7 +23,7 @@ import httpx
 from property_lookup.common import MissingKey, failure_text, vworld_auth
 
 VWORLD_DATA_URL = "https://api.vworld.kr/req/data"
-NED_LAND_USE_URL = "http://api.vworld.kr/ned/data/getLandUseAttr"
+NED_LAND_USE_URL = "https://api.vworld.kr/ned/data/getLandUseAttr"
 REDEV_LAYER = "LT_C_UPISUQ161"
 
 # UPIS dgm_nm에서 정비구역 계열만 — UQ161엔 지구단위계획 등도 섞여 있다

@@ -1,4 +1,4 @@
-"""Hosted MCP adapter. Keep generated tax_server.py unchanged."""
+"""Hosted MCP adapter. Wraps tax_server.py without changing it."""
 import os
 from urllib.parse import urlsplit
 
@@ -34,7 +34,7 @@ def make_server():
             raise ValueError("PUBLIC_BASE_URL must be an HTTPS origin without a path or credentials")
         hosts.append(parsed.netloc)
         origins.append(base_url)
-    # Use a separate manager so the generated stdio server keeps all its tools.
+    # Use a separate manager so the stdio server keeps all its tools.
     source_tools = tax_server.mcp._tool_manager.list_tools()
     enabled = [t for t in source_tools if tax_server.LAW_OC or t.name not in REMOTE_TOOLS]
     # Property lookups need their own API keys; hide them when the keys are missing.

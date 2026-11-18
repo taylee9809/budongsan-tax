@@ -50,7 +50,7 @@ From source: `pip install -r requirements.txt && python tax_server.py`. The stat
 
 The prefix tells the role. `judge_*` settles facts: household, home count, exemption and relief eligibility. Call these first.
 `calc_*` takes those facts and returns amounts. `count_*` counts homes. `search_*` and `get_*` look up statutes, ordinances
-and rulings and need `LAW_OC`. `lookup_*` fetches property facts (parcel number, official price, zoning, redevelopment zone) from public APIs and needs `JUSO_API_KEY` / `VWORLD_API_KEY`; its results are inputs to confirm, not facts. The full list with one-line descriptions is in [`llms.txt`](llms.txt).
+and rulings and need `LAW_OC`. `lookup_*` fetches property facts (parcel number, official price, zoning, redevelopment zone) from public APIs and needs `JUSO_API_KEY` / `VWORLD_API_KEY`; its results are inputs to confirm, not facts. Both APIs drop connections from outside Korea, so run these from a Korean network; `python scripts/check_property_lookup.py` checks them against measured anchor values. The full list with one-line descriptions is in [`llms.txt`](llms.txt).
 
 ## Layout
 

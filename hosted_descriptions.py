@@ -1,6 +1,6 @@
 """Tool descriptions for the hosted connector.
 
-The generated tax_server.py docstrings were written for in-house use and tell the
+The tax_server.py docstrings were written for in-house use and tell the
 model which tool to call next. Directory review forbids that, so the hosted server
 replaces those descriptions with ones that say only what each tool does and what
 its inputs mean. Calculation code is unchanged.

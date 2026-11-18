@@ -26,11 +26,12 @@ import httpx
 
 from property_lookup.common import vworld_auth
 
-# 원본이 실측으로 확인한 엔드포인트를 그대로 쓴다
-NED_LAND_PRICE_URL = "http://api.vworld.kr/ned/data/getIndvdLandPriceAttr"
-NED_HOUSE_PRICE_URL = "http://api.vworld.kr/ned/data/getIndvdHousingPriceAttr"
-NED_APART_PRICE_URL = "http://api.vworld.kr/ned/data/getApartHousingPriceAttr"
-NED_LAND_CHAR_URL = "http://api.vworld.kr/ned/data/getLandCharacteristics"
+# 원본은 http였다. 키가 평문으로 나가므로 같은 호스트의 /req/data(원본이 https로 실사용)와 맞춰 https로 쓴다.
+# 실제 동작은 scripts/check_property_lookup.py로 국내 PC에서 확인한다(해외 IP는 서버가 연결을 끊는다).
+NED_LAND_PRICE_URL = "https://api.vworld.kr/ned/data/getIndvdLandPriceAttr"
+NED_HOUSE_PRICE_URL = "https://api.vworld.kr/ned/data/getIndvdHousingPriceAttr"
+NED_APART_PRICE_URL = "https://api.vworld.kr/ned/data/getApartHousingPriceAttr"
+NED_LAND_CHAR_URL = "https://api.vworld.kr/ned/data/getLandCharacteristics"
 
 # 공동주택가격 공시 대상은 아파트·연립·다세대다. 오피스텔은 주택 공시가격이 없다 —
 # 시가표준액은 지자체 건물 시가표준액+개별공시지가, 양도 기준시가는 국세청 오피스텔 기준시가 고시를 따른다.
