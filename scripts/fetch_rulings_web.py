@@ -11,6 +11,7 @@ scripts/fetch_rulings.py 는 법제처 DRF(OC 키)와 국세법령정보시스�
   python scripts/fetch_rulings_web.py get    expc 331837
   python scripts/fetch_rulings_web.py collect decc "비사업용 토지" 10   # 검색 → 앞 N건 보관
   python scripts/fetch_rulings_web.py index-lines ttSpecialDecc_2076151.json ...   # rulings.jsonl 줄 출력
+  python scripts/fetch_rulings_web.py nts-probe [ntstDcmId]              # 국세법령정보시스템에 닿는지만 본다
 
 화면(국가법령정보센터 > 판례·해석례 등) — 모두 서버 렌더링이라 GET 한 번으로 끝난다. 로그인·캡차 없음.
 처음에는 Playwright 로 화면을 따라가 경로를 찾았지만, 목록·본문 모두 스크립트 실행 없이 HTML 에 들어 있어
@@ -25,6 +26,13 @@ robots.txt 는 전체 허용. 그래도 요청 사이에 1.5초를 쉰다.
         (중앙부처 1차 해석)                      행정안전부 350104 · 기획재정부 등: 본문 있음
                                                국세청 350105: 본문 없음 — taxlaw.nts.go.kr 로 302. 목록의 제목·요지 한 줄뿐
   expc  /LSW/expcSc.do?query=…                 /LSW/expcInfoP.do?expcSeq=…   (법제처 법령해석례)
+
+국세청 예규 본문(taxlaw.nts.go.kr) — 2026-11-18 실측: 이 환경에서는 받지 못한다.
+  목록의 상세링크는 https://taxlaw.nts.go.kr/qt/USEQTA002P.do?ntstDcmId=<번호> 꼴이다. 호스트를 허용 목록에 넣은 뒤에도
+  80번 포트는 "302 → https" 를 돌려주지만 443번은 TLS 인사에 응답이 없어 10초 뒤 연결이 끊긴다(curl·openssl·Chromium 모두 같음,
+  TLS 1.2 고정도 같음). 로그인·캡차 화면까지 가지도 못하므로 본문 구조를 확인하지 못했고, 그래서 본문 파서도 넣지 않았다 —
+  보지 못한 화면에 맞춘 파서는 추측이다. nts-probe 가 "가능"을 내는 환경(국내 망 등)이 생기면 그때 화면을 보고 detail() 에 경로를 더한다.
+  국세청 건은 여전히 목록의 제목·요지 한 줄뿐이고, 그것으로는 회귀 케이스 기대값을 만들지 않는다.
 
 검색 시맨틱(실측): 공백은 AND 로 보인다 — "대도시 중과 저가주택" 0건, "대도시 중과" 126건. 2토큰 이하로.
 사건번호("2025인3865")를 그대로 넣으면 그 건만 나온다.
@@ -285,6 +293,25 @@ def index_line(filename: str) -> dict:
     }
 
 
+NTS_DETAIL = "https://taxlaw.nts.go.kr/qt/USEQTA002P.do?ntstDcmId=%s"
+
+
+def nts_probe(doc_id: str = "010000000000072973") -> dict:
+    """국세법령정보시스템 본문 화면에 닿는지 한 번만 본다. 우회하지 않는다 — 안 되면 '불가'와 이유만 돌려준다."""
+    url = NTS_DETAIL % doc_id
+    out = {"url": url, "가능": False}
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0", "Accept-Language": "ko"})
+        with _opener.open(req, timeout=30) as r:
+            page = r.read().decode("utf-8", "replace")
+        out.update(가능=True, 길이=len(page), 로그인_또는_캡차=bool(re.search(r"로그인|captcha|보안문자", page, re.I)))
+    except urllib.error.HTTPError as e:
+        out["사유"] = f"HTTP {e.code} {(e.headers.get('Location') or '')[:80]}"
+    except Exception as e:                                         # noqa: BLE001
+        out["사유"] = f"{type(e).__name__}: {e}"[:200]
+    return out
+
+
 def collect(kind: str, query: str, n: int = 10) -> list[str]:
     files = []
     res = search(kind, query, outmax=max(15, min(150, n)))
@@ -319,6 +346,10 @@ def main(argv: list[str]) -> int:
         print(name)
     elif cmd == "collect":
         collect(argv[2], argv[3], int(argv[4]) if len(argv) > 4 else 10)
+    elif cmd == "nts-probe":
+        res = nts_probe(*argv[2:3])
+        print(json.dumps(res, ensure_ascii=False))
+        print("국세청 본문: " + ("가능 — 화면을 확인하고 detail() 에 경로를 더할 것" if res["가능"] else "불가 — " + res.get("사유", "")))
     elif cmd == "index-lines":
         for f in argv[2:]:
             print(json.dumps(index_line(f), ensure_ascii=False, sort_keys=True))
