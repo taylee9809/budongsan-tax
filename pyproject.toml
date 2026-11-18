@@ -26,6 +26,8 @@ Issues = "https://github.com/taylee9809/budongsan-tax/issues"
 
 [project.scripts]
 budongsan-tax = "budongsan_tax.tax_server:main"
+# 호스팅 서버와 같은 도구 구성(대체 도구 + 호스팅 전용 도구)을 stdio 로 — tax_full.py. 위 명령의 동작은 그대로다.
+budongsan-tax-full = "budongsan_tax.tax_full:main"
 
 # 저장소는 평면 모듈(tax_params 등)이다. 설치본에서는 저장소 루트 전체가 budongsan_tax 패키지가 되고,
 # 루트 __init__.py가 패키지 디렉터리를 sys.path 앞에 넣어 저장소에서 쓰던 import가 그대로 풀린다.

@@ -28,6 +28,10 @@
 다음에는 `plugin/review-cases.json`의 정상 5개 / 미지원·정보부족 3개 대화를 실행한다.
 실행한 도구, 입력값, 응답, 오류를 기록한다. 아직 ChatGPT 대화 실행 결과는 없다.
 
+## 대체 도구
+
+호스팅 서버의 도구 가운데 넷은 생성 파일(`tax_server.py`)의 도구가 아니라 같은 이름의 고친 판(`tax_overrides.py`의 `OVERRIDES`)이다. 이름·제목·기존 인자는 그대로이고 도구 수도 같다. `calc_jongbu_tax`는 공제 0원을 값으로 받고(생략이 미지정) `is_corporation=true`면 계산하지 않고 이유를 돌려준다. `calc_acquisition_tax`는 `heavy_type`(지방세법 §13의2①)을 주택 유상취득이 아닌 물건에 주면 계산하지 않고, 가산세율을 직접 넘긴 호출에는 지방교육세 경고를 붙인다(금액은 그대로). `judge_transfer_reliefs`는 한시 배제 나목 인자(토지거래허가·6개월 지역·소재지)를 받는다. `count_heavy_homes`는 양도 주택을 지정하면(`sale_label`) 같은 목록으로 중과 대상·가산세율까지 판정한다. 근거와 결함 기록은 `data/verification/findings.jsonl` 88·95·97·98, 케이스는 `OV-`·`CE-25`·`CE-26`이다. PyPI 패키지의 `budongsan-tax` 명령(stdio)은 생성 파일 그대로라 이 대체와 호스팅 전용 도구가 없다 — 같은 구성을 stdio로 쓰려면 `budongsan-tax-full` 명령(`tax_full.py`)을 쓴다.
+
 ## 확인된 범위
 
 2026-10-12 00:42 KST 공개 HTTPS 검증:

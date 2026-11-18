@@ -25,7 +25,21 @@ CASES = [
         {"라벨": "주택", "종류": "주택", "양도금액": 500000000, "장부가액": 400000000}]}),
     ("calc_building_property_tax", {"year": 2026, "standard_value": 500000000}),
     ("get_tax_scope", {"owner": "법인"}),
+    # 대체 도구(tax_overrides) — 더한 인자가 HTTP 로 넘어가는지
+    ("calc_jongbu_tax", {"total_official_price": 600000000, "year": 2026, "basic_deduction": 0,
+                         "tax_brackets": [{"upto": None, "rate": 0.027, "deduction": 0}]}),
+    ("calc_jongbu_tax", {"total_official_price": 600000000, "year": 2026, "is_corporation": True}),
+    ("calc_acquisition_tax", {"acquisition_price": 1000000000, "year": 2026, "acquisition_type": "유상.농지외",
+                              "heavy_type": "법인"}),
+    ("judge_transfer_reliefs", {"is_one_household_one_home": False, "holding_years": 5, "residing_years": 0,
+                                "sale_price": 1000000000, "adjusted_at_sale": True, "heavy_home_count": 3,
+                                "sale_date": "2026-08-20", "contract_date": "2026-05-01", "deposit_received": True,
+                                "land_permit_target": True}),
+    ("count_heavy_homes", {"items": [{"라벨": "A", "기준시가": 900000000}, {"라벨": "B", "기준시가": 80000000}],
+                           "heavy_tier": 2, "sale_label": "B", "sale_date": "2026-10-01", "adjusted_at_sale": True}),
 ]
+# 대체 도구 결과에 있어야 하는 것 — (CASES 순번, 구조화 결과의 키, 기대값)
+OVERRIDE_EXPECT = [(8, "과세표준", 360000000), (9, "계산불가", True), (10, "계산불가", True), (11, "중과여부", True)]
 
 
 async def check(port):
@@ -61,6 +75,19 @@ async def check(port):
                     assert not result.isError, (name, result)
                     results.append({"tool": name, "arguments": arguments,
                                     "result": result.model_dump(mode="json")})
+                import tax_overrides
+                by_name = {t.name: t for t in tools}
+                for name in tax_overrides.OVERRIDES:
+                    assert name in by_name, name
+                assert "is_corporation" in by_name["calc_jongbu_tax"].inputSchema["properties"]
+                assert "sale_label" in by_name["count_heavy_homes"].inputSchema["properties"]
+                assert "land_permit_target" in by_name["judge_transfer_reliefs"].inputSchema["properties"]
+                def payload(index):            # 도구 결과는 dict 를 JSON 텍스트로 싣는다
+                    return json.loads(results[index]["result"]["content"][0]["text"])
+                for index, key, expected in OVERRIDE_EXPECT:
+                    assert payload(index).get(key) == expected, (CASES[index][0], key, payload(index).get(key))
+                sale = payload(12)["양도주택_중과판정"]
+                assert sale["중과대상"] is False and sale["적용호"] == "법 §104⑦1호", sale
                 for name, arguments in [
                     ("calc_acquisition_tax", {"acquisition_price": -1, "year": 2026}),
                     ("calc_acquisition_tax", {"acquisition_price": 500000000}),
