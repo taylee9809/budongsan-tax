@@ -302,12 +302,12 @@ def calc_corporate_jongbu_tax(
 #: calc_corporate_acquisition_tax 결과에 붙이는 범위 고지.
 ACQUISITION_NOT_COVERED = [
     "과세표준 산정(지방세법 §10~§10의6) — acquisition_price 를 그대로 쓴다. 경매는 낙찰대금 외에 인수하는 채무·비용이 사실상의 취득가격에 들어갈 수 있다.",
-    "대도시 해당 여부 — 수도권정비계획법 §6의 과밀억제권역(산업단지 제외)인지는 수도권정비계획법 시행령 별표 1과 산업단지 지정으로 확인한다. 이 도구는 입력을 그대로 믿는다.",
+    "대도시 해당 여부 — property_location(소재지)을 주면 수도권정비계획법 시행령 별표 1의 과밀억제권역을 시·군·구 단위로 판정하지만, 일부 지역만 해당하는 인천·남양주시·시흥시(경제자유구역·남동 국가산업단지·반월특수지역 경계)와 산업단지 지정 여부는 판정하지 않는다. property_in_metro 를 주면 그 값을 그대로 믿는다.",
     "본점·주사무소·지점·분사무소 해당 여부와 그 설립·설치·전입일의 사실 판단(시행령 §27③, 시행규칙이 정하는 사무소등) — 입력을 그대로 믿는다.",
-    "대도시 중과 제외 업종(시행령 §26① 각 호) 해당 여부와 사후관리(지방세법 §13③④ — 1년 내 미사용·2년 내 매각 등으로 다시 중과).",
+    "대도시 중과 제외 업종(시행령 §26① 각 호)에 실제로 해당하는지와 그 업종에 직접 사용하는지 — excluded_business_item 으로 받은 호의 단서 요건 가운데 사실로 준 것만 판정한다. 사후관리(지방세법 §13③④ — 1년 내 미사용·2년 내 매각 등으로 다시 중과)는 계산하지 않고 주의에 적는다.",
     "과밀억제권역 본점용 신축·증축과 공장 신설·증설(§13①, §13②2호), 사치성 재산(§13⑤ 고급주택·고급오락장 등)과 그 중복(§13⑥⑦, §13의2③).",
     "휴면법인 인수 여부(시행령 §27①), 분할·합병 예외(§27④⑤), 신탁재산(§27⑥), 과점주주 간주취득(§7⑤), 조례에 의한 세율 조정(§14), 감면(지방세특례제한법).",
-    "주택 유상거래 중과 예외 가운데 시가표준액 기준(시행령 §28의2 1호) 밖의 호 — 해당 호를 입력으로 받을 뿐 그 호의 요건은 판정하지 않는다.",
+    "주택 유상거래 중과 예외 가운데 시가표준액 기준(시행령 §28의2 1호) 밖의 호 — heavy_exception_item 으로 받은 호의 요건 가운데 heavy_exception_facts 로 준 것만 판정한다. 그 호의 주체·목적(공공주택사업자, 멸실 목적 등)과 취득 뒤의 사후관리는 확인하지 않는다.",
     "등기 비용(등록면허세·인지세·국민주택채권), 부가가치세.",
 ]
 
@@ -332,6 +332,11 @@ def calc_corporate_acquisition_tax(
     in_capital_area: bool | None = None,
     in_redevelopment_zone: bool = False,
     heavy_exception_item: str | None = None,
+    excluded_business_item: str | None = None,
+    excluded_business_facts: dict | None = None,
+    property_location: str | None = None,
+    in_industrial_complex: bool | None = None,
+    heavy_exception_facts: dict | None = None,
 ) -> dict:
     """Korea acquisition tax (취득세) when a company buys real estate for consideration (purchase or auction): 12% on housing (Local Tax Act art. 13-2(1)1) with the low-value home exception, and the large-city surcharge on companies set up or moved into the Seoul overconcentration zone within five years (art. 13(2): standard rate x3 minus 4%p, e.g. 8% on shops and land), plus local education tax and rural special tax. Returns the statute trail.
 
@@ -349,24 +354,38 @@ def calc_corporate_acquisition_tax(
         acquisition_price: 취득가액 — 과세표준(원). 경매는 낙찰대금에 인수한 채무 등을 더한 사실상의 취득가격.
         acquire_date: 취득일(잔금일·경매 대금 납부일) "YYYY-MM-DD". 그 연도의 세율(검증된 연도만)로 계산한다.
         property_kind: "주택" | "주택외"(상가·사무실·오피스텔·토지 등 주택과 농지가 아닌 부동산) | "농지".
-        property_in_metro: 취득하는 부동산이 대도시(과밀억제권역, 산업단지 제외) 안에 있는지. 모르면 None.
+        property_in_metro: 취득하는 부동산이 대도시(과밀억제권역, 산업단지 제외) 안에 있는지. 모르면 None 으로 두고 property_location 을 준다.
         metro_office_date: 법인의 본점·주사무소·지점·분사무소가 대도시에서 설립·설치되거나 대도시로 전입한 날
             "YYYY-MM-DD"(서울 밖 수도권에서 서울로 옮긴 것도 전입이다 — §13②1호). 휴면법인을 인수했으면 그 법인의
             과점주주가 처음 된 날(시행령 §27②). 여러 사무소가 있으면 가장 최근의 설립·설치·전입일.
         no_metro_office: 대도시 안에 본점·지점 등이 없고 이 취득으로도 설치하지 않으면 True — 대도시 중과가 아니다.
-        excluded_business: 대도시 중과 제외 업종(시행령 §26① 각 호)에 직접 사용할 목적의 취득이면 True.
+        excluded_business: 대도시 중과 제외 업종(시행령 §26① 각 호)에 직접 사용할 목적의 취득이면 True. 어느 호인지 알면 excluded_business_item 을 준다.
         exclusive_area: 주택의 전용면적(㎡). 85 이하면 농어촌특별세가 붙지 않는다(농어촌특별세법 §4 11호). 주택일 때만.
         standard_value: 주택의 시가표준액(원, 지분·부속토지만 취득해도 주택 전체 기준). 시행령 §28의2 1호 판정에 쓴다.
         in_capital_area: 주택이 수도권(서울·인천·경기)에 있는지. standard_value 를 줄 때 필요하다.
         in_redevelopment_zone: 주택이 정비구역·소규모주택정비 사업시행구역에 있으면 True — 1호 예외에서 제외된다.
-        heavy_exception_item: 시행령 §28의2의 1호 밖 다른 호에 해당하면 그 호 번호("3", "8", "12" 등). 요건은 호출자가 확인한다.
+        heavy_exception_item: 시행령 §28의2의 1호 밖 다른 호에 해당하면 그 호 번호("3", "8", "12", "13의2" 등).
+        excluded_business_item: 대도시 중과 제외 업종의 호 번호("1"~"37" — 예 "9" 의료업, "31" 등록 임대사업자의 주택임대사업).
+            그 업종에 직접 사용할 목적의 취득일 때 준다. 호의 단서에 걸리면(예: 34호인데 대도시 밖에서 전입) 제외 업종으로 보지 않는다.
+        excluded_business_facts: 그 호의 단서 요건 사실. 3호 {"예외업종_세부": "해외건설업"|"주택건설사업", "해외건설_당해실적": bool,
+            "해외건설_사무실용": bool, "주택건설_3년내착공": bool}, 8호 {"정부출자비율": 0.25}, 10호 {"법인전환_초과부분": bool, "법인전환후_취득": bool},
+            17·25호 {"설립후1개월내_등록": bool}, 34호 {"대도시밖에서_전입": bool}, 36호 {"매입임대_약정일": "YYYY-MM-DD", "주거용오피스텔": bool}.
+            주지 않은 요건은 판정하지 않고 결과의 확인필요에 적힌다.
+        property_location: 취득하는 부동산의 소재지("서울 강남구 역삼동", "경기도 성남시 분당구", "인천 서구 불로동"). property_in_metro 가
+            None 일 때 수도권정비계획법 시행령 별표 1로 과밀억제권역인지 판정한다. 일부 지역만 해당하는 인천(강화군·옹진군·서구 8개 동 제외)·
+            남양주시·시흥시는 판정하지 않는다(대도시중과=None).
+        in_industrial_complex: 부동산이 산업단지(산업집적활성화 및 공장설립에 관한 법률) 안이면 True — 과밀억제권역이어도 대도시가 아니다.
+            property_location 과 함께 쓴다. 모르면 None(과밀억제권역이면 대도시로 계산하고 주의에 남긴다).
+        heavy_exception_facts: heavy_exception_item 으로 준 호의 요건 사실. 예 12호 {"전용면적": 59, "주택유형": "아파트", "특수관계인_제공": false},
+            17호 {"전용면적": 84, "취득당시가액": 500000000}, 7호는 standard_value, 8호 {"멸실취득_주체": "주택건설사업자"}, 18호 {"인구감소지역": true,
+            "임대등록_60일내": true}. 숫자·기간·지역 요건에 어긋나면 예외로 보지 않는다.
 
     Returns:
-        법인주택중과, 주택중과_예외, 대도시중과(True·False·None), 대도시중과_사유, 적용세율, 세율근거, 취득세, 지방교육세,
+        법인주택중과, 주택중과_예외(확인필요·사후관리 포함), 대도시_소재지판정, 대도시중과_제외업종, 대도시중과(True·False·None), 대도시중과_사유, 적용세율, 세율근거, 취득세, 지방교육세,
         농어촌특별세, 총납부세액 (대도시중과가 None 이면 세액 대신 경우별_세액), 적용 조문, 미적용 조문, 값 출처, 주의, 다루지 않는 것.
     """
     from tax_nodes.chwideuk import 취득세_부동산
-    from tax_nodes.chwideuk_gwase import 대도시중과_범위, 주택중과_예외
+    from tax_nodes.chwideuk_gwase import 대도시_판정, 대도시중과_범위, 주택중과_예외
 
     if property_kind not in _ACQ_KIND:
         raise ValueError("property_kind 는 %s 중 하나여야 합니다: %r" % (" | ".join(_ACQ_KIND), property_kind))
@@ -378,8 +397,14 @@ def calc_corporate_acquisition_tax(
         raise ValueError("no_metro_office 와 metro_office_date 를 함께 줄 수 없습니다")
     주택 = property_kind == "주택"
     if not 주택 and (exclusive_area is not None or standard_value is not None or heavy_exception_item is not None
-                   or in_redevelopment_zone):
-        raise ValueError("exclusive_area · standard_value · in_redevelopment_zone · heavy_exception_item 은 주택일 때만 씁니다")
+                   or in_redevelopment_zone or heavy_exception_facts):
+        raise ValueError("exclusive_area · standard_value · in_redevelopment_zone · heavy_exception_item · heavy_exception_facts 는 주택일 때만 씁니다")
+    if heavy_exception_facts and heavy_exception_item is None:
+        raise ValueError("heavy_exception_facts 는 heavy_exception_item(시행령 §28의2의 호)과 함께 줍니다")
+    if excluded_business_facts and excluded_business_item is None:
+        raise ValueError("excluded_business_facts 는 excluded_business_item(시행령 §26①의 호)과 함께 줍니다")
+    if in_industrial_complex is not None and property_in_metro is not None:
+        raise ValueError("in_industrial_complex 는 property_location 으로 대도시를 판정할 때만 씁니다 — property_in_metro 는 산업단지를 뺀 대도시 여부다")
     if standard_value is not None and in_capital_area is None:
         raise ValueError("standard_value 를 주면 in_capital_area(수도권 여부)도 줘야 합니다 — 기준액이 1억원과 2억원으로 갈린다")
     연도 = int(acquire_date[:4])
@@ -388,24 +413,75 @@ def calc_corporate_acquisition_tax(
     # (1) 주택 중과 예외 — 시행령 §28의2
     예외, 예외정보 = False, None
     if 주택:
-        e = 주택중과_예외(취득일=acquire_date, 시가표준액=standard_value, 수도권=bool(in_capital_area),
-                    정비구역=in_redevelopment_zone, 주택중과_예외호=heavy_exception_item)
+        요건 = {k: v for k, v in (heavy_exception_facts or {}).items()
+              if k not in ("취득일", "시가표준액", "수도권", "정비구역", "주택중과_예외호", "취득원인")}
+        if exclusive_area is not None:
+            요건.setdefault("전용면적", exclusive_area)
+        if heavy_exception_item is not None:
+            요건.setdefault("취득당시가액", acquisition_price)
+            요건.setdefault("법인", True)
+        e = 주택중과_예외(취득일=acquire_date, 시가표준액=standard_value,
+                    수도권=bool(in_capital_area) if (in_capital_area is not None or heavy_exception_item is None) else None,
+                    정비구역=in_redevelopment_zone, 주택중과_예외호=heavy_exception_item, **(요건 if heavy_exception_item is not None else {}))
         예외 = e["중과예외"]
         예외정보 = {"해당": 예외, "호": e["호"], "근거": e["근거"]}
+        if heavy_exception_item is not None:
+            예외정보.update({"확인필요": e["확인필요"], "사후관리": e["사후관리"]})
+            if not 예외:
+                예외정보["사유"] = e["사유"]
+                notes.append("heavy_exception_item=%s 은 시행령 §28의2의 예외로 보지 않았다 — %s" % (heavy_exception_item, e["사유"]))
+            elif e["호"] != "1호 저가주택":
+                notes.append("시행령 §28의2 %s는 호출자가 넘긴 호다 — 요건 가운데 사실로 준 것만 판정했다. 주택중과_예외의 확인필요·사후관리를 확인한다" % e["호"])
         if 예외 and e["근거"]:
             출처["주택 중과 예외"] = e["근거"]
         if standard_value is None and heavy_exception_item is None:
             notes.append("standard_value(시가표준액)가 없어 시행령 §28의2 1호(수도권 1억원·그 밖 2억원 이하 주택)를 보지 못했다 — "
                          "해당하면 12%가 아니라 1~3%다")
 
+    # (2-가) 소재지로 대도시(과밀억제권역 − 산업단지) 판정 — 수도권정비계획법 시행령 §9·별표 1
+    소재지판정 = None
+    if property_location:
+        z = 대도시_판정(property_location, 산업단지=in_industrial_complex)
+        소재지판정 = {k: z[k] for k in ("소재지", "과밀억제권역", "대도시", "사유", "확인필요", "읽은_지역", "근거")}
+        if property_in_metro is None:
+            property_in_metro = z["대도시"]
+            출처["대도시 소재지 판정"] = "%s — %s" % (z["근거"], z["사유"])
+            if z["대도시"] is None:
+                notes.append("소재지 '%s' 로는 대도시(과밀억제권역) 여부를 판정하지 않았다 — %s" % (property_location, z["사유"]))
+            for x in z["확인필요"]:
+                notes.append("대도시 판정 확인 필요: " + x)
+        elif z["대도시"] is not None and z["대도시"] != property_in_metro:
+            notes.append("property_in_metro=%s 와 소재지 판정(%s — %s)이 다르다 — property_in_metro 를 따랐다. 확인이 필요하다"
+                         % (property_in_metro, "대도시" if z["대도시"] else "대도시 아님", z["사유"]))
+
+    # (2-나) 대도시 중과 제외 업종 — 시행령 §26① 각 호
+    제외업종, 업종정보 = bool(excluded_business), None
+    if excluded_business_item is not None:
+        b = 대도시중과_범위(취득일=acquire_date, 대도시_예외업종호=excluded_business_item,
+                      **{k: v for k, v in (excluded_business_facts or {}).items() if k not in ("취득일", "대도시_예외업종호")})
+        if b["대도시중과_예외업종"]:
+            제외업종 = True
+            업종정보 = {"해당": True, "호": b["대도시중과_예외업종_호"], "근거": b["대도시중과_예외업종_근거"],
+                    "확인필요": b["대도시중과_예외업종_확인필요"], "사후관리": b["대도시중과_예외업종_사후관리"]}
+            출처["대도시 중과 제외 업종"] = b["대도시중과_예외업종_근거"]
+        else:
+            제외업종 = False
+            업종정보 = {"해당": False, "호": None, "사유": b.get("대도시중과_예외업종_사유")}
+            notes.append("excluded_business_item=%s 은 대도시 중과 제외 업종으로 보지 않았다 — %s%s" % (
+                excluded_business_item, b.get("대도시중과_예외업종_사유"),
+                " (excluded_business=True 도 함께 왔지만 호의 판정을 따랐다)" if excluded_business else ""))
+    excluded_business = 제외업종
+
     # (2) 대도시 중과 — 법 §13②1호, 시행령 §27③
     대도시, 사유 = None, None
     if property_in_metro is False:
-        대도시, 사유 = False, "취득하는 부동산이 대도시(과밀억제권역, 산업단지 제외) 밖이다"
+        대도시, 사유 = False, "취득하는 부동산이 대도시(과밀억제권역, 산업단지 제외) 밖이다" + (
+            " — " + 소재지판정["사유"] if 소재지판정 and 소재지판정["대도시"] is False else "")
     elif no_metro_office:
         대도시, 사유 = False, "대도시 안에 본점·지점 등이 없고 설치하지도 않는다 — §13②1호의 설립·설치·전입에 따른 취득이 아니다"
     elif property_in_metro is None:
-        사유 = "property_in_metro(부동산이 대도시 안인지)를 모른다"
+        사유 = "property_in_metro(부동산이 대도시 안인지)를 모른다" + (
+            " — 소재지 '%s' 는 판정하지 않았다(%s)" % (property_location, 소재지판정["사유"]) if 소재지판정 else "")
     elif not metro_office_date:
         사유 = "metro_office_date(대도시 안 본점·지점의 설립·설치·전입일)를 모른다 — 대도시에 사무소가 없으면 no_metro_office=True"
     else:
@@ -422,6 +498,9 @@ def calc_corporate_acquisition_tax(
     if 대도시 and excluded_business:
         notes.append("대도시 중과 제외 업종에 직접 사용할 목적이라 §11 세율을 적용했다(§13② 단서). 취득 후 1년 안에 그 업종에 쓰지 않거나 "
                      "2년 이상 쓰지 않고 팔면 중과세율로 추징된다(§13③)")
+        if 업종정보:
+            notes.extend("제외 업종 확인 필요(판정하지 않음): " + x for x in 업종정보["확인필요"])
+            notes.extend("제외 업종 사후관리: " + x for x in 업종정보["사후관리"][1:])
 
     def 계산(중과: bool) -> dict:
         return 취득세_부동산(acquisition_price, 연도, _ACQ_KIND[property_kind], 취득일=acquire_date,
@@ -432,6 +511,10 @@ def calc_corporate_acquisition_tax(
     out = {"납세의무자": "법인", "취득가액": acquisition_price, "취득일": acquire_date, "부동산": property_kind,
            "법인주택중과": bool(주택 and not 예외) if 주택 else None, "주택중과_예외": 예외정보,
            "대도시중과": 대도시, "대도시중과_사유": 사유}
+    if 소재지판정 is not None:
+        out["대도시_소재지판정"] = 소재지판정
+    if 업종정보 is not None:
+        out["대도시중과_제외업종"] = 업종정보
     if 대도시 is None:
         아님, 중과 = 계산(False), 계산(True)
         같음 = _acq_parts(아님) == _acq_parts(중과)
