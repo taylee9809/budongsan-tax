@@ -150,10 +150,38 @@ def 참조조문() -> set[tuple]:
     return {(n.법령, n.조) for n in _등록부.values()}
 
 
+_전체로드_끝 = False
+
+
+def 전체로드() -> None:
+    """tax_nodes 의 조문 모듈을 모두 올려 노드를 등록한다(한 번만). 실행기를 만들 때 불린다.
+
+    노드는 다른 모듈의 산출을 이름으로 읽는다 — ctx.값("산출이름", None). 그 산출을 내는 모듈이 import 돼 있지 않으면 후보가 없어
+    기본값이 조용히 돌아오고, 같은 호출이 프로세스의 import 상태에 따라 다른 답을 냈다(findings 112, 2026-11-18). 판례 회귀·pytest 는
+    전 모듈을 올려 놓고 돌므로, 그 검증된 상태를 모든 호출의 기본 상태로 맞춘다. 모듈 하나가 import 에 실패하면 숨기지 않고 그대로 올린다.
+    """
+    global _전체로드_끝
+    if _전체로드_끝:
+        return
+    _전체로드_끝 = True          # 로드 도중 실행기가 만들어져도 다시 들어오지 않게 먼저 세운다
+    import importlib
+    import pkgutil
+
+    import tax_nodes
+    try:
+        for m in sorted(pkgutil.iter_modules(tax_nodes.__path__), key=lambda x: x.name):
+            if m.name != "engine":
+                importlib.import_module("tax_nodes." + m.name)
+    except BaseException:
+        _전체로드_끝 = False
+        raise
+
+
 class 실행:
     """사실 + 기준연도를 받아 노드를 수요 기반으로 풀어내는 실행기."""
 
     def __init__(self, 사실: dict, 연도: int, 기준일: str = "", 세목: str = ""):
+        전체로드()
         self.사실 = dict(사실)
         self.연도 = 연도
         self.기준일 = 기준일

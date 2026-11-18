@@ -200,6 +200,19 @@ def test_attached_land_limit_default_is_unchanged():
 
 
 # ------------------------------------------------------------------ 7. 모듈 로드 (findings 112)
+def test_executor_registers_every_node_module():
+    """실행기를 만들면 tax_nodes 의 조문 모듈이 모두 등록된다 — 엔진만 올린 새 프로세스에서 확인(전체로드)."""
+    code = ("import sys, json, pkgutil\n"
+            "import tax_nodes\n"
+            "from tax_nodes.engine import 실행\n"
+            "before = [m for m in sys.modules if m.startswith('tax_nodes.') and m != 'tax_nodes.engine']\n"
+            "실행({}, 2026)\n"
+            "want = {'tax_nodes.' + m.name for m in pkgutil.iter_modules(tax_nodes.__path__)}\n"
+            "print(json.dumps([before, sorted(want - set(sys.modules))]))\n")
+    out = subprocess.run([sys.executable, "-c", code], cwd=str(ROOT), capture_output=True, text=True, check=True).stdout
+    assert json.loads(out.strip().splitlines()[-1]) == [[], []]
+
+
 def test_wiring_does_not_depend_on_import_state():
     """tax_nodes.yangdo 만 올린 새 프로세스에서도 이름으로 읽는 연결 노드(비과세판정_주택수_b 등)가 닿는다."""
     code = ("import sys, json\n"

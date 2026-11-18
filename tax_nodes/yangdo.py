@@ -824,11 +824,3 @@ def 양도세_부동산(양도가액: int, 취득가액: int, 필요경비: int,
         "미적용 조문": ctx.미적용목록,
         "근거표": ctx.근거표(),
     }
-
-
-# 이 모듈의 노드가 이름으로 읽는 연결 노드의 모듈 — 로드돼 있지 않으면 ctx.값(이름, None)이 조용히 None 을 돌려 연결이 꺼진다.
-# 같은 호출이 프로세스의 import 상태에 따라 다른 답을 내던 것을 막는다(findings 112, 2026-11-18). 순환을 피하려고 맨 끝에 둔다.
-import tax_nodes.sangjeung_boyu_rest  # noqa: E402,F401 — 고가겸용주택_주택범위(영 §160① 괄호)
-import tax_nodes.yangdo_gigan  # noqa: E402,F401 — 기간_*(영 §154⑤⑥·법 §95④·§104②), 상생임대_요건판정
-import tax_nodes.yangdo_gita_a  # noqa: E402,F401 — 필요경비_항목판정·필요경비_97조2항·자산_취득양도시기
-import tax_nodes.yangdo_gita_b  # noqa: E402,F401 — 비과세판정_주택수_b·구155⑯·입주권 장특공·동거봉양 입주권·부칙 29242호·수용잔존_포함_b
