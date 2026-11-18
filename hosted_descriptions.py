@@ -124,7 +124,7 @@ excluded_homes_mine, excluded_homes_spouse_or_parent: 공동상속(§155③)·�
 
 items 원소: {"종류": 주택|조합원입주권|분양권, "기준시가": 원(입주권=종전주택가·분양권=공급가), "지방소재": bool, "인구감소등_12호": bool, "정비구역": bool, "전용면적"·"취득가액"·"취득일"·"준공일"·"아파트": 소형 신축주택(영 §167의3①12호 가목) 판정용, "라벨": str}.
 
-heavy_tier: 2(2주택 중과, 영 §167의10)면 기준시가 1억 이하(정비구역 제외) 불산입이 추가되고, 3(3주택 이상, 영 §167의3)에는 그 완화가 없다. 같은 주택이라도 계열에 따라 세는 수가 다르다.
+heavy_tier: 2(2주택 중과, 영 §167의10) | 3(3주택 이상, 영 §167의3). 수에서 빼는 주택은 두 계열이 같다. 기준시가 1억 이하 주택(영 §167의10①9호, 정비구역 등 제외)은 수에서 빼지 않는다 — 그 주택을 양도할 때만 중과하지 않는 사유이며, heavy_tier=2 결과의 '양도시_중과제외_9호'에 라벨로 표시한다.
 반환 주택수는 중과 판정용이며 비과세 판정용 주택수와 다르다.""",
 
     "judge_inherited_house_priority": """When a decedent held several homes, pick the single inherited home that gets the special treatment.

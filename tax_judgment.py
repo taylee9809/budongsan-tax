@@ -51,7 +51,7 @@ HIGH_PRICE_HOME = 1_200_000_000                  # 고가주택 (소법 §89①3
 FAIR_INTEREST_RATE = 0.046                       # 적정이자율 (법인규칙 §43②)
 LOAN_GIFT_THRESHOLD = 10_000_000                 # 무상대출 기준금액 (상증령 §31의4②)
 FUND_PLAN_PRICE_LIMIT = 600_000_000              # 자금조달계획서 비규제 6억 (별표 1 3호)
-TEMP_EXCLUSION_SALE_DEADLINE = "2026-05-09"      # 중과 한시배제 (가목 기준)
+TEMP_EXCLUSION_SALE_DEADLINE = "2026-05-09"      # 중과 한시배제 가목 기한 — 구판 대조본(legacy_relief_v0)용. 판정은 tax_nodes.yangdo_jungkwa.한시배제_판정
 
 
 def _cite(rule: str, basis: str, grade: str = "B") -> dict:
@@ -419,7 +419,7 @@ def _table2_rate(holding_years: float, residing_years: float) -> float:
 # ── 중과세율·한시배제 경과규정 ───────────────────────────────────────────────
 _HEAVY_RATE_UP_FROM = date(2021, 6, 1)   # 법 17477호 부칙 §3 — 이후 양도분 20/30%p (그 전 10/20%p)
 # 한시배제는 창(窓)이다 — 끝만 보고 시작을 안 보면 그 전 양도분까지 소급 배제된다.
-_TEMP_EXCL_FROM = date(2022, 5, 10)      # 영 32654호 부칙 §4 — 2022-05-10 이후 양도분부터 적용
+# 창의 시작(2022-05-10, 영 32654호 부칙 §4)·끝·나/다목 기한은 tax_nodes.yangdo_jungkwa.한시배제_판정 한 곳에 있다.
 _TEMP_EXCL_CONTRACT_MONTHS = 4           # 영 §167의3①12호의2 다목 — 계약 후 양도기한(일부 지역 6개월)
 
 
@@ -433,27 +433,19 @@ def _heavy_surcharge(homes: int, sale: date | None) -> tuple[float, str]:
 
 
 def _temp_exclusion(sale: date | None, holding_years: float, contract: date | None,
-                    deposit_received: bool, months: int) -> tuple[bool, str]:
-    """중과 한시배제 (영 §167의3①12호의2) — 보유 2년 이상이 대전제."""
-    if sale is None:
-        return False, ""
-    if sale < _TEMP_EXCL_FROM:
-        return False, (f"한시배제 신설 전 양도({sale.isoformat()} < {_TEMP_EXCL_FROM.isoformat()}) "
-                       "— 영 32654호 부칙 §4로 2022-05-10 이후 양도분부터 적용된다")
-    if holding_years < 2:
-        return False, ("한시배제는 '보유기간 2년 이상인 주택'이 전제 — 보유 "
-                       f"{holding_years}년이라 대상 아님 (영 §167의3①12호의2 각 호 외의 부분)")
-    if sale <= date.fromisoformat(TEMP_EXCLUSION_SALE_DEADLINE):
-        return True, (f"{sale.isoformat()} ≤ {TEMP_EXCLUSION_SALE_DEADLINE} 양도 — 중과 한시배제 "
-                      "(영 §167의3①12호의2 가목)")
-    if contract and deposit_received and contract <= date.fromisoformat(TEMP_EXCLUSION_SALE_DEADLINE):
-        limit = _add_months(contract, months)
-        if sale <= limit:
-            return True, (f"{contract.isoformat()} 계약+계약금 수령 후 {months}개월 내"
-                          f"({limit.isoformat()}까지) 양도 — 한시배제 (영 §167의3①12호의2 나·다목)")
-        return False, (f"계약은 기한 내({contract.isoformat()})이나 양도가 {months}개월을 넘겼다 "
-                       f"— 기한 {limit.isoformat()}")
-    return False, ""
+                    deposit_received: bool, months: int, *, permit_target: bool | None = None,
+                    permit_applied: date | None = None, permit_granted: bool = False,
+                    six_month_region: bool | None = None, location: str = "") -> tuple[bool, str]:
+    """중과 한시배제 (영 §167의3①12호의2) — 보유 2년 이상이 대전제.
+
+    판정 기준은 실행 노드(tax_nodes.yangdo_jungkwa.한시배제_판정)에만 있다 — 여기서는 그 결과를 (배제, 사유)로 돌려줄 뿐이다.
+    permit_target: 토지거래허가 대상 주택인가(나목) / 아닌가(다목). None 이면 종전처럼 계약·계약금·기한만 본다.
+    six_month_region·location: 나목4)의 표 지역(6개월) — 둘 다 없으면 months(4|6)를 쓴다.
+    """
+    from tax_nodes.yangdo_jungkwa import 한시배제_판정
+    r = 한시배제_판정(sale, holding_years, contract, deposit_received, 토허대상=permit_target, 토허신청=permit_applied,
+                 토허허가=permit_granted, 여섯개월지역=six_month_region, 소재지=location, 개월=months)
+    return r["배제"], r["사유"]
 
 
 def _add_months(d: date, months: int) -> date:
@@ -469,13 +461,21 @@ def judge_transfer_reliefs(is_one_household_one_home: bool, holding_years: float
                            adjusted_at_sale: bool = False, heavy_home_count: int = 1,
                            sale_date: str = "", meets_exemption_requirements: bool = True,
                            contract_date: str = "", deposit_received: bool = False,
-                           contract_months_limit: int = _TEMP_EXCL_CONTRACT_MONTHS) -> dict:
+                           contract_months_limit: int = _TEMP_EXCL_CONTRACT_MONTHS,
+                           land_permit_target: bool | None = None, land_permit_applied_date: str = "",
+                           land_permit_granted: bool = False, six_month_region: bool | None = None,
+                           location: str = "") -> dict:
     """양도세 특례 판정 오케스트레이터 (노드 N95-2-1·N95-2-2·N159의4-1·N104-7-1·N160-1).
 
     반환값을 calc_transfer_tax 인자(long_term_deduction_rate·surcharge_rate)로 연결.
     - is_one_household_one_home: 트리①·②의 출력(비과세 특례 간주 포함)
     - heavy_home_count: 중과판정 주택수 (영 §167의3~11 제외 적용 후)
     - meets_exemption_requirements: 보유 2년(+취득당시 조정이면 거주 2년) 충족 여부
+    - land_permit_target·land_permit_applied_date·land_permit_granted: 한시배제 나목(토지거래허가 대상 주택 —
+      2026-05-09까지 허가 신청 + 허가 + 계약·계약금, 2026-05-10 이후 계약분은 2026-09-09/11-09까지 양도).
+      land_permit_target 을 주지 않으면 종전처럼 계약일·계약금·contract_months_limit 만 본다.
+    - six_month_region·location: 나목4)의 표 지역(6개월·11-09) 여부 또는 소재지(예 "서울특별시 성동구").
+      둘 다 없으면 contract_months_limit(4|6)를 쓴다.
     """
     flags, citations = [], []
     surcharge = 0.0
@@ -488,7 +488,9 @@ def judge_transfer_reliefs(is_one_household_one_home: bool, holding_years: float
         citations.append(_cite(f"조정지역 {heavy_home_count}주택 중과 +{int(surcharge*100)}%p", rate_basis, "A"))
         excluded, why = _temp_exclusion(
             s, holding_years, date.fromisoformat(contract_date) if contract_date else None,
-            deposit_received, contract_months_limit)
+            deposit_received, contract_months_limit, permit_target=land_permit_target,
+            permit_applied=date.fromisoformat(land_permit_applied_date) if land_permit_applied_date else None,
+            permit_granted=land_permit_granted, six_month_region=six_month_region, location=location)
         if excluded:
             heavy, surcharge = False, 0.0
             citations.append(_cite(why, "영 §167의3①12호의2", "A"))
@@ -1231,7 +1233,7 @@ def judge_155_special(kind: str, event_date: str = "", sale_date: str = "",
 
 # ── 9. 중과판정 주택수 자동화 (영 §167의3~11) ─────────────────────────────
 HEAVY_LOCAL_PRICE_LIMIT = 300_000_000   # 지방 저가 불산입 (영 §167의3①1호 등)
-HEAVY_TWO_HOME_LOW_LIMIT = 100_000_000  # 2주택 판정 전용 1억 제외 (영 §167의10①9호)
+HEAVY_TWO_HOME_LOW_LIMIT = 100_000_000  # 영 §167의10①9호 금액(참고용) — 판정은 tax_nodes.setdae_jutaeksu.기준시가1억이하_9호
 
 
 _SMALL_NEW_FROM = date(2024, 1, 10)   # 영 §167의3①12호 가목 — 소형 신축주택 특례 기간
@@ -1261,19 +1263,28 @@ def _is_small_new_house(it: dict) -> tuple[bool, str]:
                   "(영 §167의3①12호 가목)")
 
 
+def _low_price_clause_9(it: dict) -> bool:
+    """영 §167의10①9호(양도 당시 기준시가 1억 이하, 정비구역 등 제외) — 기준은 실행 노드 쪽 한 곳."""
+    from tax_nodes.setdae_jutaeksu import 기준시가1억이하_9호
+    return 기준시가1억이하_9호(it)
+
+
 def count_heavy_homes(items: list[dict], heavy_tier: int = 3) -> dict:
-    """양도세 중과판정 주택수 산정 (영 §167의3②·167의4②·167의11② 불산입 자동 적용).
+    """양도세 중과판정 주택수 산정 (영 §167의3①·167의10① 각 호 외 본문, 167의4②·167의11② 불산입 자동 적용).
 
     items 원소: {"종류": 주택|조합원입주권|분양권, "기준시가": 원(입주권=종전주택가·분양권=공급가),
     "지방소재": bool(수도권·광역시·특별자치시 밖 — 군·읍·면 포함), "인구감소등_12호": bool,
     "전용면적"·"취득가액"·"취득일"·"준공일"·"아파트": 12호 가목 소형 신축주택 판정용,
-    "정비구역": bool, "라벨": str}. 반환 주택수를 judge_transfer_reliefs의 heavy_home_count로 연결.
+    "정비구역": bool, "주거환경개선_사업시행자양도": bool, "라벨": str}.
+    반환 주택수를 judge_transfer_reliefs의 heavy_home_count로 연결.
 
-    heavy_tier: 어느 계열로 세는지 — 2(2주택 중과, 영 §167의10)면 기준시가 1억 이하 불산입이
-      추가로 적용된다. 3(3주택 이상, 영 §167의3)에는 그 완화가 없다. **같은 주택이라도 계열에
-      따라 세는 수가 달라진다.**
+    heavy_tier: 어느 계열로 세는지 — 2(2주택 중과, 영 §167의10) | 3(3주택 이상, 영 §167의3).
+      수에서 빼는 주택은 두 계열이 같다(지방 3억 이하·12호). 기준시가 1억 이하 주택(영 §167의10①9호)은
+      **수에서 빼지 않는다** — 그 주택을 양도할 때만 중과하지 않는 사유다. 2주택 계열에서 해당 주택은
+      '항목별'에 "양도시_중과제외": True 로 표시하고 '양도시_중과제외_9호'에 라벨을 모은다.
+      (2026-11-17 전에는 heavy_tier=2 에서 이 주택을 수에서 뺐다 — findings 50.)
     """
-    counted, details = 0, []
+    counted, details, low9 = 0, [], []
     for it in items:
         label = it.get("라벨") or it.get("종류", "주택")
         std = int(it.get("기준시가", 0))
@@ -1285,17 +1296,24 @@ def count_heavy_homes(items: list[dict], heavy_tier: int = 3) -> dict:
             inc, why = False, small_why
         elif it.get("지방소재") and std <= HEAVY_LOCAL_PRICE_LIMIT:
             inc, why = False, "지방(수도권·광역시·특자시 밖) + 기준시가 3억 이하 — 불산입 (영 §167의3①1호·167의4②·167의11②)"
-        elif heavy_tier == 2 and std and std <= HEAVY_TWO_HOME_LOW_LIMIT and not it.get("정비구역"):
-            inc, why = False, ("2주택 중과 판정 전용 — 기준시가 1억 이하(정비구역 제외) 불산입 "
-                               "(영 §167의10①9호). 3주택 계열에는 이 완화가 없다")
+        d = {"항목": label, "산입": inc, "사유": why}
+        if inc and heavy_tier == 2 and it.get("종류", "주택") == "주택" and _low_price_clause_9(it):
+            d["사유"] = ("산입 — 주택 수에는 든다. 다만 이 주택을 양도할 때는 중과하지 않는다"
+                       "(양도 당시 기준시가 1억 이하, 정비구역 등 제외 — 영 §167의10①9호·§167의11①9호)")
+            d["양도시_중과제외"] = True
+            low9.append(label)
         if inc:
             counted += 1
-        details.append({"항목": label, "산입": inc, "사유": why})
-    flags = [f"heavy_tier={heavy_tier} 기준으로 셌다 — 2주택/3주택 계열은 불산입 규정이 다르므로 "
-             "계열을 바꿔 다시 세야 할 수 있다 (영 §167의10①3·9호는 2주택 전용)",
-             "양도 주택 자체의 중과 제외(장기임대·상속 5년·한시배제·비과세특례 주택 등)는 judge_transfer_reliefs의 sale_date·별도 확인",
+        details.append(d)
+    flags = [f"heavy_tier={heavy_tier} 기준으로 셌다 — 수에서 빼는 주택(지방 3억 이하·12호)은 두 계열이 같고, "
+             "양도 주택 자체의 중과 제외 사유가 계열별로 다르다 (영 §167의10①3·4·7·9호는 2주택 전용)",
+             "양도 주택 자체의 중과 제외(장기임대·상속 5년·한시배제·비과세특례 주택, 2주택 계열의 기준시가 1억 이하 등)는 "
+             "judge_transfer_reliefs의 sale_date·별도 확인 — 주택 목록으로 한 번에 보려면 tax_nodes.yangdo_jungkwa_ho.중과세율_판정",
              "혼인 5년 완충(§167의3⑨·167의4⑤)은 3주택 계열만 — 해당 시 배우자 보유분 차감"]
-    return {"중과판정_주택수": counted, "항목별": details, "플래그": flags,
+    if low9:
+        flags.append("기준시가 1억 이하 주택(%s)은 주택 수에 넣었다 — 그 주택을 양도하면 heavy_home_count와 무관하게 중과 대상이 아니고"
+                     "(영 §167의10①9호), 다른 주택을 양도하면 2주택으로 중과 대상이다" % ", ".join(low9))
+    return {"중과판정_주택수": counted, "항목별": details, "양도시_중과제외_9호": low9, "플래그": flags,
             "주의": "비과세 판정용 주택수(count_transfer_homes)와 별개 — 같은 세대가 두 값이 다를 수 있음"}
 
 
