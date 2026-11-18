@@ -30,7 +30,20 @@
 
 ## 대체 도구
 
-호스팅 서버의 도구 가운데 둘(`judge_transfer_reliefs`, `count_heavy_homes`)은 생성 파일(`tax_server.py`)의 도구가 아니라 같은 이름의 고친 판(`tax_overrides.py`의 `OVERRIDES`)이다. 이름·제목·기존 인자는 그대로이고 도구 수도 같다. 공개 저장소의 판정기에만 있는 인자(토지거래허가 사실, 보유 목록)를 생성 래퍼가 아직 넘기지 못해서 둔 것이다. `calc_jongbu_tax`(공제 0원·법인 거부)와 `calc_acquisition_tax`(§13의2는 주택 유상취득만)는 2026-11-18 생성기 원본에서 고쳐 다시 생성했으므로 더 이상 대체하지 않는다.
+호스팅 서버의 도구 가운데 여덟은 생성 파일(`tax_server.py`)의 도구가 아니라 같은 이름의 고친 판(`tax_overrides.py`의 `OVERRIDES`)이다. 이름·제목·기존 인자(이름·순서·기본값)는 그대로이고 도구 수도 같다. 공개 저장소의 판정기·조문 노드에만 있는 입력을 생성 래퍼가 아직 넘기지 못해서 둔 것이며, 새 인자를 주지 않은 호출은 생성 도구와 결과가 같다(`tests/test_tax_overrides.py`의 격자).
+
+| 도구 | 더한 입력 |
+|---|---|
+| `judge_transfer_reliefs` | 토지거래허가 사실(한시 배제 나목), 보유 목록으로 중과 판정 |
+| `count_heavy_homes` | 양도 주택을 지정하면 같은 목록으로 중과 대상·가산세율 판정 |
+| `judge_temporary_two_homes` | 조정대상지역 공고일(영 §155①1호 대괄호, 2026-09-30 개정) |
+| `judge_acquisition_homes_and_rate` | 종전 주택등의 조정대상지역 여부, 신규 주택 계약일·계약금 지급일(영 §28의5①, 2026-09-30 개정) |
+| `judge_155_special` | 양도일 현재 세대 주택 수 |
+| `judge_156_3_from_portfolio` | 분양권 완공 여부, 그 밖의 주택 수 직접 지정 |
+| `calc_attached_land_limit` | 멸실된 상속주택의 정착면적·양도일 |
+| `calc_property_tax` | 지방세특례제한법 경감과의 비교(지방세법 §111의2④) |
+
+`judge_jongbu_one_home_status`는 대체하지 않았다 — 2026-09-30 개정의 조정대상지역 2년 판정 입력은 `other_homes` 원소의 키라 생성 도구로도 닿고, 그 키를 호스팅 설명에 적었다. 인자별 뜻과 근거 조문, 원본 래퍼에 되돌려 넣을 목록은 `docs/WRAPPER_GAPS.md`(`python scripts/wrapper_gaps.py`가 만든다)에 있다. `calc_jongbu_tax`(공제 0원·법인 거부)와 `calc_acquisition_tax`(§13의2는 주택 유상취득만)는 2026-11-18 생성기 원본에서 고쳐 다시 생성했으므로 대체하지 않는다.
 
 ## 확인된 범위
 

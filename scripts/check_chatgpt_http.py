@@ -37,6 +37,26 @@ CASES = [
                                 "land_permit_target": True}),
     ("count_heavy_homes", {"items": [{"라벨": "A", "기준시가": 900000000}, {"라벨": "B", "기준시가": 80000000}],
                            "heavy_tier": 2, "sale_label": "B", "sale_date": "2026-10-01", "adjusted_at_sale": True}),
+    # 2026-11-19 에 더한 대체 도구 — 새 인자를 실어 한 번씩(기대값은 tests/test_tax_overrides.py 와 케이스 OV-12~26 이 지킨다)
+    ("judge_temporary_two_homes", {"prev_acquired": "2020-01-01", "new_acquired": "2026-09-01", "prev_sale_date": "2029-03-01",
+                                   "prev_in_adjusted_area": True, "new_in_adjusted_area": True,
+                                   "adjusted_area_notice_date": "2026-09-15"}),
+    ("judge_acquisition_homes_and_rate", {"homes": [{"라벨": "종전", "종류": "주택", "시가표준액": 500000000, "수도권": True},
+                                                    {"라벨": "신규", "종류": "주택", "시가표준액": 700000000, "수도권": True,
+                                                     "취득대상": True}],
+                                          "in_adjusted_area": True, "acquire_date": "2026-10-15", "prev_disposal_date": "2029-03-01",
+                                          "prev_home_in_adjusted_area": True, "new_contract_date": "2026-08-20",
+                                          "new_deposit_paid_date": "2026-08-20"}),
+    ("judge_155_special", {"kind": "혼인", "event_date": "2020-05-01", "sale_date": "2026-03-01", "homes_at_sale": 3}),
+    ("judge_156_3_from_portfolio", {"items": [{"라벨": "종전", "종류": "주택", "취득일": "2018-01-01", "양도대상": True},
+                                              {"라벨": "분양권", "종류": "분양권", "취득일": "2022-03-01"}],
+                                    "sale_date": "2024-06-01", "bunyang_already_completed": True, "other_homes": 0}),
+    ("calc_attached_land_limit", {"building_footprint_m2": 150, "land_area_m2": 500,
+                                  "demolished_inherited_footprint_m2": 80, "sale_date": "2026-05-01"}),
+    ("calc_property_tax", {"official_price": 300000000, "year": 2026, "one_home": True, "jiteuk_relief_type": "전세사기피해자",
+                           "jiteuk_relief_facts": {"전세사기피해자": True, "전세사기피해주택": True, "전용면적": 59}}),
+    ("judge_jongbu_one_home_status", {"other_homes": [{"유형": "일시적신규", "신규취득일": "2026-09-01", "종전_조정대상지역": True,
+                                                       "신규_조정대상지역": True}], "base_date": "2029-06-01"}),
 ]
 # 대체 도구 결과에 있어야 하는 것 — (CASES 순번, 구조화 결과의 키, 기대값)
 OVERRIDE_EXPECT = [(8, "과세표준", 360000000), (9, "계산불가", True), (10, "계산불가", True), (11, "중과여부", True)]
