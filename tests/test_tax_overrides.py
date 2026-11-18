@@ -19,7 +19,8 @@ def test_overrides_name_generated_tools():
     # calc_jongbu_tax·calc_acquisition_tax 는 2026-11-18 원본(server.py)에서 고쳐 다시 생성했다 — 대체하지 않는다
     assert set(tax_overrides.OVERRIDES) == {
         "judge_transfer_reliefs", "count_heavy_homes", "judge_temporary_two_homes", "judge_155_special",
-        "judge_156_3_from_portfolio", "calc_attached_land_limit", "judge_acquisition_homes_and_rate", "calc_property_tax"}
+        "judge_156_3_from_portfolio", "calc_attached_land_limit", "judge_acquisition_homes_and_rate", "calc_property_tax",
+        "estimate_reconstruction_levy"}
     assert set(tax_overrides.OVERRIDES) <= set(SOURCE)
     assert all(fn.__name__ == name for name, fn in tax_overrides.OVERRIDES.items())
 
@@ -91,7 +92,7 @@ def test_every_generated_wrapper_gap_is_overridden():
 
 def test_hosted_server_serves_the_overrides():
     tools = {t.name: t for t in tax_http.make_server()._tool_manager.list_tools()}
-    assert len(tools) == 46
+    assert len(tools) == 48
     for name, fn in tax_overrides.OVERRIDES.items():
         assert tools[name].fn is fn
         assert tools[name].title == SOURCE[name].title and tools[name].annotations == SOURCE[name].annotations
@@ -458,7 +459,7 @@ def test_full_stdio_entry_uses_the_hosted_assembly(monkeypatch):
 
     monkeypatch.setattr("mcp.server.fastmcp.FastMCP.run", fake_run)
     tax_full.main()
-    assert seen["transport"] == "stdio" and len(seen["tools"]) == 46
+    assert seen["transport"] == "stdio" and len(seen["tools"]) == 48
     assert all(seen["tools"][n] is fn for n, fn in tax_overrides.OVERRIDES.items())
     assert "get_tax_scope" in seen["tools"]
 

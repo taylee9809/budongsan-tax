@@ -298,10 +298,33 @@ def calc_property_tax(
                     지방세특례_감면유형=jiteuk_relief_type, 지방세특례_사실=dict(jiteuk_relief_facts or {}))
 
 
+# ───────────────────────────────────────────────────────────── 재건축부담금
+def estimate_reconstruction_levy(
+    end_price_total: int,
+    start_price_total: int,
+    member_count: int,
+    normal_rise_rate: float,
+    development_cost: int = 0,
+    start_date: str = "",
+    end_date: str = "",
+    management_plan_applied_date: str = "",
+    one_home_holding_years: float | None = None,
+    is_one_home_at_end: bool = False,
+    age_at_end: int | None = None,
+    development_cost_items: dict | None = None,
+) -> dict:
+    """재건축부담금 추정. 설명은 hosted_descriptions.DESCRIPTIONS["estimate_reconstruction_levy"]."""
+    return _tj.estimate_reconstruction_levy(
+        end_price_total, start_price_total, member_count, normal_rise_rate, development_cost,
+        start_date, end_date, management_plan_applied_date, one_home_holding_years,
+        is_one_home_at_end, age_at_end, development_cost_items=development_cost_items)
+
+
 #: 대체 도구 — 이름 → 고친 판 함수. 이름은 생성 서버 도구 이름과 같아야 한다.
 OVERRIDES = {f.__name__: f for f in (
     judge_transfer_reliefs, count_heavy_homes, judge_temporary_two_homes, judge_155_special, judge_156_3_from_portfolio,
-    calc_attached_land_limit, judge_acquisition_homes_and_rate, calc_property_tax)}
+    calc_attached_land_limit, judge_acquisition_homes_and_rate, calc_property_tax,
+    estimate_reconstruction_levy)}
 
 
 def replace_tools(source_tools: list, descriptions: dict | None = None) -> list:

@@ -16,6 +16,7 @@ from acquisition_checklist import get_acquisition_tax_checklist
 from building_property_tax import calc_building_property_tax
 from corporate_tax import (calc_corporate_acquisition_tax, calc_corporate_jongbu_tax,
                            calc_corporate_property_sale_tax, judge_corporate_non_business_land)
+from gift_presumption import judge_gift_presumption, judge_low_price_transfer_gift
 from tax_scope import get_tax_scope
 from hosted_descriptions import DESCRIPTIONS
 from policy_pages import CONTACT, PRIVACY_HTML, SUPPORT_NAME, TERMS_HTML
@@ -124,6 +125,12 @@ def make_server():
         annotations=ToolAnnotations(title="Property tax on a building (건축물 재산세)", readOnlyHint=True,
                                     destructiveHint=False, idempotentHint=True, openWorldHint=False),
     )
+
+    # 증여 예시·추정 — 저가 양수·고가 양도(상증법 §35), 증여 추정(§44·§45). 조문 노드(tax_nodes/sangjeung_chujeong.py)로 판정한다.
+    for fn, title in ((judge_low_price_transfer_gift, "Below-market sale gift (저가 양수·고가 양도 증여이익)"),
+                      (judge_gift_presumption, "Gift presumption test (증여 추정 판정)")):
+        server.add_tool(fn, title=title, annotations=ToolAnnotations(
+            title=title, readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 
     @server.custom_route("/healthz", methods=["GET"])
     async def health(request):

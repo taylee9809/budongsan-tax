@@ -82,6 +82,9 @@ _NOTES = {
         "소득세법 시행령 §155②·§154⑦ · 서면4팀-2283(2005.11.23.) — findings 113"),
     ("calc_attached_land_limit", "sale_date"): (
         "양도일. 멸실 신축 경로에서 2022-01-01 전 양도분은 수도권 도시지역도 5배", "소득세법 시행령 §154⑦(2020.2.11. 개정 부칙 §39) — findings 113"),
+    ("estimate_reconstruction_levy", "development_cost_items"): (
+        "개발비용을 항목(공사비·설계감리비·부대비용·그밖의경비·세금공과금·기부채납가액 등)으로 주면 노드가 산정해 development_cost 로 쓴다(development_cost 가 0일 때만)",
+        "재건축초과이익 환수에 관한 법률 §11①·시행령 §9 (노드 tax_nodes/jaegeonchuk_gaebalbiyong.py)"),
     ("calc_property_tax", "jiteuk_relief_type"): (
         "지방세특례제한법 재산세 경감 유형(노드 사실 '지방세특례_감면유형'). 특례세율과 견주어 경감 효과가 큰 쪽 하나를 고른다",
         "지방세법 §111의2④ — findings 113"),

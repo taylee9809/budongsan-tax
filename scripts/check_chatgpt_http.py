@@ -76,7 +76,7 @@ async def check(port):
         else:
             raise RuntimeError("Server did not start")
         health = response.json()
-        assert health == {"status": "ok", "tools": 46, "law_lookup": False}, health
+        assert health == {"status": "ok", "tools": 48, "law_lookup": False}, health
         assert (await http.get(root + "/.well-known/openai-apps-challenge")).text == "synthetic-domain-check"
         invalid_host = await http.post(root + "/mcp", headers={"Host": "untrusted.invalid"}, json={})
         assert invalid_host.status_code == 421, invalid_host.text
@@ -85,7 +85,7 @@ async def check(port):
                 await client.initialize()
                 tools = (await client.list_tools()).tools
                 names = {t.name for t in tools}
-                assert len(names) == 46 and "search_law" not in names and "get_acquisition_tax_checklist" in names
+                assert len(names) == 48 and "search_law" not in names and "get_acquisition_tax_checklist" in names
                 assert {"calc_corporate_property_sale_tax", "judge_corporate_non_business_land", "calc_building_property_tax",
                         "calc_corporate_jongbu_tax", "calc_corporate_acquisition_tax", "get_tax_scope"} <= names
                 assert all(t.annotations and t.annotations.readOnlyHint for t in tools)

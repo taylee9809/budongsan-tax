@@ -7,7 +7,7 @@
 판정기·조문 노드보다 뒤처진 곳은 `tax_overrides.OVERRIDES` 의 같은 이름 도구가 메운다(호스팅 서버와 `budongsan-tax-full`).
 이 문서의 2절이 **원본 래퍼에 되돌려 넣을 인자 목록**이다 — 원본을 고쳐 다시 생성하면 그 도구의 대체를 걷어낸다.
 
-요약: 도구 43개 가운데 빠진 입력이 있는 도구 7개(인자 20개), 대체 도구 8개가 더한 인자 32개, 남은 인자 0개.
+요약: 도구 43개 가운데 빠진 입력이 있는 도구 8개(인자 21개), 대체 도구 9개가 더한 인자 33개, 남은 인자 0개.
 
 ## 1. 전수 조사
 
@@ -41,7 +41,7 @@
 | `calc_rental_income_tax` | tax_judgment.calc_rental_income_tax | — | — | — | — | — | 생성 docstring |
 | `judge_business_dealer_status` | tax_judgment.judge_business_dealer_status | — | — | — | — | — | 생성 docstring |
 | `calc_dealer_comparative_tax` | tax_judgment.calc_dealer_comparative_tax | — | — | — | `housing_trade_profits` · `tax_brackets` | — | 생성 docstring |
-| `estimate_reconstruction_levy` | tax_judgment.estimate_reconstruction_levy | — | — | — | — | — | 생성 docstring |
+| `estimate_reconstruction_levy` | tax_judgment.estimate_reconstruction_levy | `development_cost_items` | 대체 | — | — | — | 호스팅 |
 | `judge_transfer_reduction_limit` | tax_judgment.judge_transfer_reduction_limit | — | — | — | `reductions` | — | 생성 docstring |
 | `judge_small_house_rental_reduction` | tax_judgment.judge_small_house_rental_reduction | — | — | — | — | — | 호스팅 |
 | `judge_farmland_reduction` | tax_judgment.judge_farmland_reduction | — | — | — | `yearly_incomes` | — | 호스팅 |
@@ -107,6 +107,7 @@
 | `count_heavy_homes` | `household_facts` | `None` | 세대 단위 사실(혼인일·혼인후_신규취득일 등) | 소득세법 시행령 §167의3⑨·§167의4⑤ |
 | `calc_attached_land_limit` | `demolished_inherited_footprint_m2` | `None` | 멸실된 상속주택의 정착면적. 주면 한도 = 멸실 전 정착면적 × 배율(노드 소득세법시행령-155-2-멸실신축-b) | 소득세법 시행령 §155②·§154⑦ · 서면4팀-2283(2005.11.23.) — findings 113 |
 | `calc_attached_land_limit` | `sale_date` | `''` | 양도일. 멸실 신축 경로에서 2022-01-01 전 양도분은 수도권 도시지역도 5배 | 소득세법 시행령 §154⑦(2020.2.11. 개정 부칙 §39) — findings 113 |
+| `estimate_reconstruction_levy` | `development_cost_items` | `None` | 개발비용을 항목(공사비·설계감리비·부대비용·그밖의경비·세금공과금·기부채납가액 등)으로 주면 노드가 산정해 development_cost 로 쓴다(development_cost 가 0일 때만) | 재건축초과이익 환수에 관한 법률 §11①·시행령 §9 (노드 tax_nodes/jaegeonchuk_gaebalbiyong.py) |
 | `judge_156_3_from_portfolio` | `bunyang_already_completed` | `False` | 양도 당시 분양권이 이미 완공돼 주택이 된 경우 — ③항 2호 기한 확인 플래그 | 소득세법 시행령 §156의3③2호 |
 | `judge_156_3_from_portfolio` | `other_homes` | `None` | 종전주택·분양권 외 주택 수를 직접 지정(목록에서 센 수를 덮어쓴다). 판정기 기본은 목록 산정이라 도구 기본값은 None | 소득세법 시행령 §156의3②(1주택과 1분양권 전제) |
 | `judge_156_3_from_portfolio` | `excluded_homes` | `None` | 그중 주택 수 제외 특례로 빠지는 수를 직접 지정(위와 한 쌍) | 소득세법 시행령 §156의3② · 조세특례제한법 §99의4 등 |

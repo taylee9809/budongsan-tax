@@ -14,7 +14,7 @@ mcp-name: io.github.taylee9809/budongsan-tax
 
 *English.* Korean real-estate tax engine and MCP server: acquisition, property, comprehensive holding,
 capital gains, rental income, gift and inheritance tax, reconstruction levy. 43 tools,
-2736 statute nodes (one function per article or paragraph), official rulings as regression tests.
+2799 statute nodes (one function per article or paragraph), official rulings as regression tests.
 Every result carries the statute trail. English README: [`README-EN.md`](README-EN.md). Tool list: [`llms.txt`](llms.txt).
 
 ## 구현 및 검증 현황
@@ -22,9 +22,9 @@ Every result carries the statute trail. English README: [`README-EN.md`](README-
 | 항목 | 규모 |
 |---|---|
 | MCP 도구 | 43 |
-| 실행 노드 | 2736 (조·항·호 단위의 실행 함수) |
-| 전환 대기 조문 | 조 단위 0 (수록된 법문 코퍼스의 세액 영향 조문 기준, 코퍼스 밖 미착수 4) · 호·목 단위 0 (노드 없는 형제 110개 모두 사유 기록). 제목 분류 때문에 이 집계에 들지 않는 코퍼스 조문 20개는 [`docs/NODE_COVERAGE.md`](docs/NODE_COVERAGE.md)의 '요약표에 들지 않는 조문' 참고 |
-| 회귀 케이스 / 해석례 / 결함 기록 | 558 / 1371 / 94 |
+| 실행 노드 | 2799 (조·항·호 단위의 실행 함수) |
+| 전환 대기 조문 | 조 단위 0 (수록된 법문 코퍼스의 세액 영향 조문 기준, 코퍼스 밖 미착수 4) · 호·목 단위 0 (노드 없는 형제 117개 모두 사유 기록). 제목 분류 때문에 이 집계에 들지 않는 코퍼스 조문 3개는 [`docs/NODE_COVERAGE.md`](docs/NODE_COVERAGE.md)의 '요약표에 들지 않는 조문' 참고 |
+| 회귀 케이스 / 해석례 / 결함 기록 | 612 / 1371 / 98 |
 
 위 수치는 저장소에 수록된 구현과 검증 자료의 규모입니다. 전체 세법의 지원 범위나 테스트 통과 건수를 의미하지 않습니다.
 
