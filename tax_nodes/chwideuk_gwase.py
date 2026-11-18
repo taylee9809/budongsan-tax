@@ -939,7 +939,10 @@ def 영제28조의2(ctx):
     호 = ctx.사실값("주택중과_예외호")
     if 호 is None:
         return 미적용("영 §28의2 각 호 해당 없음(저가주택 아님, 호 미입력)")
-    키 = 호 if 호 in _주택중과예외 else str(호)
+    # 호 표의 키는 정수(8)와 가지번호 문자열("2의3")이 섞여 있다 — "8"·"8호"·8 을 모두 같은 호로 읽는다(findings 130).
+    키 = 호 if isinstance(호, int) and not isinstance(호, bool) else str(호).strip().removesuffix("호").strip()
+    if isinstance(키, str) and 키.isdigit():
+        키 = int(키)
     if 키 not in _주택중과예외:
         return 미적용("영 §28의2에 %s호는 없다" % 호)
     if 키 == 11:

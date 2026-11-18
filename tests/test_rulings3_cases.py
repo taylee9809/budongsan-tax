@@ -22,7 +22,7 @@ _DIR = ROOT / "data" / "verification" / "node_cases"
 _FILES = sorted(_DIR.glob("rulings3_*.jsonl"))
 _CASES = [(f.name, json.loads(l)) for f in _FILES for l in f.read_text(encoding="utf-8").splitlines() if l.strip()]
 _IDS = [c["case_id"] for _, c in _CASES]
-_알려진_불일치 = {"R428856-1": "findings 130 — 영 §28의2 호 번호를 문자열로 넘기면 무시된다"}
+_알려진_불일치: dict[str, str] = {}   # findings 130(R428856-1)은 2026-11-18 수정
 _제외사유 = ("구법", "사실판단", "정보부족", "쟁점-노드밖", "연결오류", "판례충돌", "해석충돌")
 
 
@@ -71,3 +71,17 @@ def test_active_case_matches_ruling(name, case):
             pytest.xfail(_알려진_불일치[case["case_id"]])
         return
     assert ok, detail
+
+
+@pytest.mark.parametrize("호", ["8", 8, "8호", " 8 "])
+def test_finding_130_exception_item_forms(호):
+    """findings 130 — 영 §28의2 호 번호는 문자열·정수 어느 쪽으로 줘도 같은 호다."""
+    from tax_nodes.chwideuk_gwase import 주택중과_예외
+    r = 주택중과_예외(취득일="2026-03-02", 주택중과_예외호=호)
+    assert r["중과예외"] is True and r["호"] == "8호"
+
+
+def test_finding_130_branch_item_and_unknown():
+    from tax_nodes.chwideuk_gwase import 주택중과_예외
+    assert 주택중과_예외(취득일="2026-03-02", 주택중과_예외호="2의3")["호"] == "2의3호"
+    assert 주택중과_예외(취득일="2026-03-02", 주택중과_예외호="99")["중과예외"] is False
