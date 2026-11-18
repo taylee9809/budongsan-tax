@@ -186,7 +186,8 @@ def check_citations(answer: str, call_texts: list[str], surface_text: str = "") 
     """답에 적힌 조문을 도구 결과와 대조한다. surface_text 는 서버 안내문·도구 설명(있으면 '없음'을 한 번 더 가른다).
 
     판정(항목마다 하나):
-      있음            같은 법령·같은 조가 도구 결과에 있다(항까지 적었으면 그 항도 있다)
+      있음            같은 법령·같은 조가 도구 결과에 있다(항까지 적었으면 그 항도 있다). 도구 결과가 법령 이름을 줄여
+                      적은 조("영 §154①", "시행령 §26①")는 조 번호가 같으면 있는 것으로 본다
       항_불일치       법령·조는 있으나 답이 적은 항이 도구 결과에 없다
       법령_불명       답이 법령 이름을 적지 않았다 — 조 번호는 도구 결과의 어느 법령에 있다
       법령_불일치     조 번호는 도구 결과에 있으나 다른 법령의 조다
@@ -198,10 +199,13 @@ def check_citations(answer: str, call_texts: list[str], surface_text: str = "") 
     tool_cites = [c for s in result_strings(call_texts) for c in extract_citations(s)]
     by_law: dict[str, dict[str, set]] = {}
     any_jo: dict[str, set] = {}
+    loose: dict[str, set] = {}                    # 도구 결과가 법령 이름 없이 적은 조("영 §154①" → None, "시행령 §26①" → "?시행령")
     for c in tool_cites:
         if c["법령"]:
             by_law.setdefault(c["법령"], {}).setdefault(c["조"], set()).add(c["항"])
         any_jo.setdefault(c["조"], set()).add(c["법령"])
+        if c["법령"] is None or c["법령"].startswith("?"):
+            loose.setdefault(c["조"], set()).add(c["법령"])
 
     def candidates(law: str | None) -> list[str]:
         if law is None:
@@ -220,6 +224,9 @@ def check_citations(answer: str, call_texts: list[str], surface_text: str = "") 
         if laws:
             hangs = set().union(*(by_law[l][c["조"]] for l in laws))
             verdict = "있음" if c["항"] is None or c["항"] in hangs else "항_불일치"
+        elif c["법령"] and c["조"] in loose and (None in loose[c["조"]] or any(
+                k and k.startswith("?") and c["법령"].endswith(k[1:]) for k in loose[c["조"]])):
+            verdict = "있음"                      # 도구 결과가 법령 이름을 줄여 적었다("영 §154①", "시행령 §26①")
         elif c["조"] in any_jo:
             verdict = "법령_불명" if c["법령"] is None else "법령_불일치"
         elif (c["법령"], c["조"]) in surface or (c["법령"] is None or c["법령"].startswith("?")) and c["조"] in surface_jo:

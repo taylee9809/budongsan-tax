@@ -15,6 +15,11 @@ def cites(text):
     return [(c["법령"], c["조"], c["항"]) for c in qr.extract_citations(text)]
 
 
+@pytest.fixture(scope="module")
+def questions():
+    return qr.parse_questions(qr.CASES_MD.read_text(encoding="utf-8"))
+
+
 # ── 조문 인용 뽑기 ──
 
 def test_law_name_carries_over_within_a_line():
@@ -109,10 +114,38 @@ def test_bare_decree_matches_any_decree_in_results():
     assert verdicts("시행령 §9") == {("?시행령", "9", None): "법령_불일치"}
 
 
-def test_decree_in_tool_result_takes_law_from_same_string_only():
-    # 결과의 "시행령 §2의4①" 은 앞 문자열(종합부동산세법 §9②)의 법령을 이어받지 않는다 — 문자열마다 따로 읽는다
-    v = verdicts("종합부동산세법 시행령 §2의4①")
-    assert v == {("종합부동산세법 시행령", "2의4", 1): "법령_불일치"}
+def test_tool_result_that_abbreviates_the_law_name_still_matches():
+    # 결과의 "시행령 §2의4①" 은 앞 문자열(종합부동산세법 §9②)의 법령을 이어받지 않는다 — 법령 이름이 줄어든 조로 남고,
+    # 답이 어느 시행령이라고 적었든 조 번호가 같으면 있는 것으로 본다. 본법으로 적으면 맞지 않는다.
+    assert verdicts("종합부동산세법 시행령 §2의4①") == {("종합부동산세법 시행령", "2의4", 1): "있음"}
+    assert verdicts("종합부동산세법 §2의4①") == {("종합부동산세법", "2의4", 1): "법령_불일치"}
+    # "영 §154①" 처럼 법령이 아예 없는 표기
+    assert verdicts("소득세법 시행령 §154①", ['{"근거": "영 §154①·⑤"}']) == {("소득세법 시행령", "154", 1): "있음"}
+
+
+def test_description_only_citation_is_separated():
+    report = qr.check_citations("지방세법 시행령 §26① 과 소득세법 §999", [TOOL_RESULT],
+                                surface_text="대도시 중과 제외 업종(지방세법 시행령 §26①)")
+    assert report["설명에만_있음"] == ["지방세법 시행령 §26①"] and report["없음"] == ["소득세법 §999"]
+
+
+def test_forbidden_and_conditional_tools(questions):
+    by = {q["id"]: q for q in questions}
+    assert by["Q13"]["금지_도구"] == ["calc_corporate_jongbu_tax"] and by["Q13"]["기대_도구"] == ["calc_jongbu_tax"]
+    row = qr.check_answer(by["Q13"], "답", [{"tool": "calc_corporate_jongbu_tax", "arguments": {}, "isError": False, "text": "{}"}])
+    assert row["금지_도구_호출"] == ["calc_corporate_jongbu_tax"]
+
+
+def test_first_turn_is_checked_against_first_turn_calls_only(tmp_path, questions):
+    qdir = tmp_path / "Q1"
+    qdir.mkdir()
+    lines = [{"tool": "get_tax_scope", "arguments": {}, "isError": False, "text": "종합부동산세법 §9②", "turn": 1},
+             {"tool": "calc_corporate_jongbu_tax", "arguments": {}, "isError": False, "text": "종합부동산세법 §8①", "turn": 2}]
+    (qdir / "calls.jsonl").write_text("".join(json.dumps(x, ensure_ascii=False) + "\n" for x in lines), encoding="utf-8")
+    (qdir / "turn1.md").write_text("종합부동산세법 §9②, §8①", encoding="utf-8")
+    (qdir / "answer.md").write_text("종합부동산세법 §9②, §8①", encoding="utf-8")
+    first, final = qr.check_run(tmp_path, questions)
+    assert first["조문_없음"] == ["종합부동산세법 §8①"] and final["조문_없음"] == []
 
 
 def test_plain_text_tool_result():
@@ -173,11 +206,6 @@ def test_amount_given_by_user_is_not_flagged():
 
 
 # ── 채점표 읽기 ──
-
-@pytest.fixture(scope="module")
-def questions():
-    return qr.parse_questions(qr.CASES_MD.read_text(encoding="utf-8"))
-
 
 def test_question_sheet_parses(questions):
     assert [q["id"] for q in questions] == ["Q%d" % i for i in range(1, 16)]
