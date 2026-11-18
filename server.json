@@ -21,6 +21,24 @@
           "description": "law.go.kr Open API key. Optional; only the statute and ruling lookup tools need it.",
           "isRequired": false,
           "isSecret": true
+        },
+        {
+          "name": "JUSO_API_KEY",
+          "description": "juso.go.kr address search API key. Optional; only the address-to-parcel lookup needs it.",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "VWORLD_API_KEY",
+          "description": "vworld.kr Open API key. Optional; only the official price, zoning and redevelopment-zone lookups need it.",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "VWORLD_DOMAIN",
+          "description": "Service URL registered with the vworld.kr key. Optional.",
+          "isRequired": false,
+          "isSecret": false
         }
       ]
     }

@@ -11,6 +11,7 @@ from mcp.types import ToolAnnotations
 from starlette.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 
 import tax_server
+from property_lookup.tools import TOOL_KEYS as LOOKUP_TOOL_KEYS, tool_enabled as lookup_tool_enabled
 from acquisition_checklist import get_acquisition_tax_checklist
 from hosted_descriptions import DESCRIPTIONS
 from policy_pages import CONTACT, PRIVACY_HTML, SUPPORT_NAME, TERMS_HTML
@@ -36,6 +37,8 @@ def make_server():
     # Use a separate manager so the generated stdio server keeps all its tools.
     source_tools = tax_server.mcp._tool_manager.list_tools()
     enabled = [t for t in source_tools if tax_server.LAW_OC or t.name not in REMOTE_TOOLS]
+    # Property lookups need their own API keys; hide them when the keys are missing.
+    enabled = [t for t in enabled if t.name not in LOOKUP_TOOL_KEYS or lookup_tool_enabled(t.name)]
     # Directory review: descriptions say what a tool does, never which tool to call next.
     enabled = [t.model_copy(update={"description": DESCRIPTIONS[t.name]}) if t.name in DESCRIPTIONS else t
                for t in enabled]

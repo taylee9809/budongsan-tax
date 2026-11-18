@@ -13,7 +13,7 @@ mcp-name: io.github.taylee9809/budongsan-tax
 ![세금 판정 및 계산 실행 예시](docs/demo.gif)
 
 *English.* Korean real-estate tax engine and MCP server: acquisition, property, comprehensive holding,
-capital gains, rental income, gift and inheritance tax, reconstruction levy. 43 tools,
+capital gains, rental income, gift and inheritance tax, reconstruction levy. 46 tools,
 2431 statute nodes (one function per article or paragraph), official rulings as regression tests.
 Every result carries the statute trail. English README: [`README-EN.md`](README-EN.md). Tool list: [`llms.txt`](llms.txt).
 
@@ -21,7 +21,7 @@ Every result carries the statute trail. English README: [`README-EN.md`](README-
 
 | 항목 | 규모 |
 |---|---|
-| MCP 도구 | 43 |
+| MCP 도구 | 46 |
 | 실행 노드 | 2431 (조·항·호 단위의 실행 함수) |
 | 전환 대기 조문 | 0 (수록된 법문 코퍼스의 세액 영향 조문 기준) |
 | 회귀 케이스 / 해석례 / 결함 기록 | 307 / 1318 / 40 |
@@ -34,9 +34,10 @@ Every result carries the statute trail. English README: [`README-EN.md`](README-
 |---|---|---|
 | 세율·계수 | `data/tax_params.json`, `tax_params.py` | 연도별 세율, 비율 및 상한 관리. 검증되지 않은 연도의 값은 반환하지 않습니다. |
 | 법령 원문 | `data/legal_nodes/` | 조문 원문과 시행일 보관. 계산 결과의 근거와 연결합니다. |
-| 판정·계산 도구 | `tax_judgment.py`, `tax_server.py`, `entity_tax.py` | 도구 43개. 세목별 요건 판정과 세액 계산을 제공합니다. |
+| 판정·계산 도구 | `tax_judgment.py`, `tax_server.py`, `entity_tax.py` | 세목별 요건 판정과 세액 계산을 제공합니다. |
 | 조문별 실행 노드 | `tax_nodes/` | 조문 단위 함수를 조합하여 판정과 계산을 수행합니다. 기존 계산 로직을 이 구조로 이관하고 있습니다. |
 | 검증 | `data/verification/`, `tax_case_store.py` | 회귀 케이스, 결함 기록 및 해석례 관리 |
+| 부동산 기초정보 조회 | `property_lookup/` | 주소 → PNU 변환, 기준일 현재 공시가격, 용도지역·지목, 정비구역 편입 여부를 공공 API에서 조회합니다. 판정·계산 도구는 이 층에 의존하지 않습니다. |
 
 조문별 이관 상태는 [`docs/NODE_COVERAGE.md`](docs/NODE_COVERAGE.md)에서 확인할 수 있습니다.
 세목별 검증 결과와 불일치 건수는 [`docs/BENCH.md`](docs/BENCH.md), 조문 근거를 포함한 출력 예시는 [`docs/EXAMPLE.md`](docs/EXAMPLE.md)에 수록되어 있습니다.
@@ -56,7 +57,7 @@ Claude Code 등록 명령: `claude mcp add budongsan-tax -- uvx budongsan-tax`
 
 ```bash
 pip install -r requirements.txt
-cp .env.example .env      # 법령·해석례 조회 시 LAW_OC 설정 필요. 세액 계산은 키 없이 사용 가능
+cp .env.example .env      # 법령·해석례 조회는 LAW_OC, 기초정보 조회는 JUSO_API_KEY·VWORLD_API_KEY 필요. 세액 계산은 키 없이 사용 가능
 python tax_server.py      # stdio MCP 서버
 ```
 
@@ -87,8 +88,11 @@ python -m pytest tests
 | `calc_*` | 입력값과 관련 판정 결과를 바탕으로 세액을 계산합니다. |
 | `count_*` | 해당 기준에 따른 주택 수를 산정합니다. |
 | `search_*`, `get_*` | 법령·조례·해석례를 조회합니다. 조회 도구에는 `LAW_OC` 설정이 필요합니다. |
+| `lookup_*` | 판정·계산에 넣을 부동산 기초정보(PNU, 공시가격, 용도지역, 정비구역)를 공공 API에서 조회합니다. `JUSO_API_KEY`, `VWORLD_API_KEY` 설정이 필요합니다. |
 
 요건 판정이 필요한 계산은 관련 `judge_*` 도구의 결과를 먼저 확인한 뒤 진행합니다.
+
+`lookup_*` 도구의 결과는 입력값 후보입니다. 결과마다 조회일, 기준연도, 신뢰 수준(확정·추정·참고·확인 불가)이 붙으며, 사용자가 직접 입력한 값을 대체하지 않습니다. 공시가격은 기준일에 공시되어 있던 연도의 값을 고르고, 정비구역 편입 여부는 조회일 현재 상태이므로 관리처분계획인가일 등 판정 기준일의 사실은 고시문으로 확인해야 합니다.
 
 전체 도구 목록과 설명은 [`llms.txt`](llms.txt)를 참고하십시오.
 

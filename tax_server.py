@@ -3,7 +3,8 @@
 
 이 파일은 scripts/extract_tax_server.py 가 server.py(비공개 통합 서버, git 6116176)에서
 세금 도구와 그 의존 정의만 AST로 뽑아 생성한 것이다. 손으로 고치지 말고 생성기를 다시 돌린다.
-도구 43개. 법령·재결례 조회 도구는 .env의 LAW_OC(법제처 Open API 키, 무료)가 있을 때만 동작한다.
+도구 46개. 법령·재결례 조회 도구는 .env의 LAW_OC(법제처 Open API 키, 무료)가, 부동산 기초정보 조회 도구(lookup_*)는
+JUSO_API_KEY·VWORLD_API_KEY가 있을 때만 동작한다.
 """
 import os
 
@@ -2060,6 +2061,84 @@ def get_relief_catalog_entry(article: str = "", article_id: str = "") -> dict:
         return {"오류": "카탈로그에 없다: %s" % article,
                 "안내": "법 조문만 색인돼 있다. 시행령은 include_decree로 조회할 것"}
     return dict(e, 주의=_rc.DISCLAIMER)
+
+
+# ── 부동산 기초정보 조회 (korea-realestate-mcp에서 이식) ─────────────────────────────
+# 판정·계산 도구는 이 층에 의존하지 않는다. 키(JUSO_API_KEY·VWORLD_API_KEY)가 없으면 안내만 돌려준다.
+from property_lookup import tools as _pl  # noqa: E402
+
+@mcp.tool(title='Address to parcel number (PNU)', annotations=ToolAnnotations(title='Address to parcel number (PNU)', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True))
+def lookup_pnu(jibun_address: str) -> dict:
+    """Convert a Korean lot-number address into the 19-digit parcel number (PNU). Needs JUSO_API_KEY.
+
+    지번주소를 필지고유번호(PNU 19자리)로 바꾼다. 도로명주소 검색 API로 법정동코드를 얻어 조립한다.
+
+    VWORLD_API_KEY가 있으면 토지특성 원장에 그 필지가 있는지 대조해 상태를 '확정'으로 올린다.
+    대조하지 못하면 '미검증'이다. 후보가 여럿이면 PNU를 채우지 않는다(다른 필지 값이 붙는 것을 막는다).
+
+    Args:
+        jibun_address: 본번(·부번)이 들어간 지번주소. 예: "서울특별시 동대문구 용두동 232-76", "경기도 광주시 목동 산 21-1"
+
+    Returns:
+        상태: 확정 | 미검증 | 주소불충분 | 다건보류 | 검색실패 | 키 미설정
+        PNU, 근거, 출처(API·조회일·신뢰)
+    """
+    return _pl.lookup_pnu(jibun_address)
+
+@mcp.tool(title='Official price on a date', annotations=ToolAnnotations(title='Official price on a date', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True))
+def lookup_official_price(
+    pnu: str,
+    base_date: str,
+    property_type: str,
+    dong: str = "",
+    ho: str = "",
+    exclusive_area: float = 0.0,
+) -> dict:
+    """Look up the Korean official price (공시가격) that applies on a given date, plus zoning and land category. Needs VWORLD_API_KEY.
+
+    기준일 현재 공시된 공시가격과 같은 연도의 토지특성(용도지역·지목·필지면적)을 조회한다.
+
+    공시가격은 매년 1월 1일 기준으로 공동주택·개별주택은 4월 30일, 개별공시지가는 5월 31일까지 공시된다
+    (부동산 가격공시에 관한 법률 시행령 §43①·§38①·§21①). 기준일이 4월 1일 전이면 전년도 가격,
+    공시 기한 후면 당해 가격을 쓴다. 그 사이면 실제 공시일에 따라 갈리므로 두 연도 값을 모두 돌려준다.
+    재산세·종부세 과세기준일(6월 1일)은 당해 연도다.
+
+    Args:
+        pnu: 필지고유번호 19자리
+        base_date: 기준일 YYYY-MM-DD — 취득일, 과세기준일(6월 1일), 양도일 등
+        property_type: 아파트 | 연립 | 다세대 | 단독 | 다가구 | 토지 | 오피스텔
+            (오피스텔은 주택 공시가격이 없어 조회하지 않고 확인 경로를 안내한다)
+        dong: 공동주택 동 이름(예 "101동"). 없으면 ""
+        ho: 공동주택 호(예 "1203"). 공동주택은 호를 넣어야 '확정' 값이 나온다
+        exclusive_area: 호를 모를 때 전유면적(㎡). ±3㎡ 세대 중위값을 '추정'으로 돌려준다
+
+    Returns:
+        공시가격: 연도별 {원, basis} (토지는 원_m2·필지면적_m2 포함), 적용연도, 연도판단,
+        토지특성: 용도지역·지목·필지면적, 플래그, 출처(신뢰: 확정 | 추정 | 확인 불가)
+    """
+    return _pl.lookup_official_price(pnu, base_date, property_type, dong, ho, exclusive_area or None)
+
+@mcp.tool(title='Redevelopment zone check', annotations=ToolAnnotations(title='Redevelopment zone check', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True))
+def lookup_redev_zone(pnu: str, x: float | None = None, y: float | None = None) -> dict:
+    """Check whether a parcel is inside a redevelopment/reconstruction zone as of today. Needs VWORLD_API_KEY.
+
+    필지가 정비구역(재개발·재건축·재정비촉진 등)에 편입돼 있는지 조회일 현재 상태를 조회한다.
+
+    필지 토지이용계획속성에서 정비사업 계열 지역지구가 '포함'·'저촉'이면 편입이다('접함'은 편입 아님).
+    좌표를 주면 UPIS 정비구역 도면도 함께 봐서 구역 이름을 얻는다.
+
+    **조회일 현재 값이다.** 관리처분계획인가일 등 세법 판정 기준일의 사실로 쓰려면 고시문으로 확인한다.
+    구역지정 전(추진위 단계)은 잡히지 않으므로 '조회상 미편입'은 확정이 아니다.
+
+    Args:
+        pnu: 필지고유번호 19자리
+        x: 경도(WGS84, 선택). y와 함께 넣는다
+        y: 위도(WGS84, 선택)
+
+    Returns:
+        상태: 편입 | 조회상 미편입 | 확인 불가, 지역지구, 구역명, 접함, 고시(연도·번호), 한계, 출처
+    """
+    return _pl.lookup_redev_zone(pnu, x, y)
 
 
 def main() -> None:

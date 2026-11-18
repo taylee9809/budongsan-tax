@@ -18,7 +18,7 @@ No warranty (AGPL §15, §16). [한국어 README](README.md).
 
 | | |
 |---|---|
-| MCP tools | 43 |
+| MCP tools | 46 |
 | Statute nodes | 2431 (one function per article, paragraph or item) |
 | Articles pending conversion | 0 (every tax-affecting article in the corpus is a node) |
 | Regression cases / rulings / defect log | 307 / 1318 / 40 |
@@ -50,7 +50,7 @@ From source: `pip install -r requirements.txt && python tax_server.py`. The stat
 
 The prefix tells the role. `judge_*` settles facts: household, home count, exemption and relief eligibility. Call these first.
 `calc_*` takes those facts and returns amounts. `count_*` counts homes. `search_*` and `get_*` look up statutes, ordinances
-and rulings and need `LAW_OC`. The full list with one-line descriptions is in [`llms.txt`](llms.txt).
+and rulings and need `LAW_OC`. `lookup_*` fetches property facts (parcel number, official price, zoning, redevelopment zone) from public APIs and needs `JUSO_API_KEY` / `VWORLD_API_KEY`; its results are inputs to confirm, not facts. The full list with one-line descriptions is in [`llms.txt`](llms.txt).
 
 ## Layout
 
@@ -58,9 +58,10 @@ and rulings and need `LAW_OC`. The full list with one-line descriptions is in [`
 |---|---|---|
 | 1 values | `data/tax_params.json`, `tax_params.py` | rate tables, ratios, caps, by year. Unverified years are refused |
 | 2 statute text | `data/legal_nodes/` | article text and effective dates; the "grounds" field of a result points here |
-| 3 judges and calculators | `tax_judgment.py`, `tax_server.py`, `entity_tax.py` | the 43 tools. Older structure: several articles per function |
+| 3 judges and calculators | `tax_judgment.py`, `tax_server.py`, `entity_tax.py` | the judge and calc tools. Older structure: several articles per function |
 | 4 statute nodes | `tax_nodes/` | one article per function; a computation is a composition of nodes; replacing layer 3 |
 | verification | `data/verification/`, `tax_case_store.py` | cases, defects, rulings |
+| property lookup | `property_lookup/` | address → parcel number, official price on a given date, zoning, redevelopment zone, from public APIs. Optional; the tax layers never import it |
 
 Per-article conversion status: [`docs/NODE_COVERAGE.md`](docs/NODE_COVERAGE.md).
 

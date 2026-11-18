@@ -32,7 +32,7 @@ budongsan-tax = "budongsan_tax.tax_server:main"
 # data/ 는 하위 패키지로 묶여 tax_params.py 등의 "<모듈 옆>/data" 경로가 설치 뒤에도 같다.
 [tool.setuptools]
 include-package-data = true
-packages = ["budongsan_tax", "budongsan_tax.tax_nodes", "budongsan_tax.data", "budongsan_tax.data.legal_nodes", "budongsan_tax.data.verification"]
+packages = ["budongsan_tax", "budongsan_tax.tax_nodes", "budongsan_tax.property_lookup", "budongsan_tax.data", "budongsan_tax.data.legal_nodes", "budongsan_tax.data.verification"]
 
 [tool.setuptools.package-dir]
 budongsan_tax = "."
