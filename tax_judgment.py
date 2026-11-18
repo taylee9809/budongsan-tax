@@ -464,8 +464,17 @@ def judge_transfer_reliefs(is_one_household_one_home: bool, holding_years: float
                            contract_months_limit: int = _TEMP_EXCL_CONTRACT_MONTHS,
                            land_permit_target: bool | None = None, land_permit_applied_date: str = "",
                            land_permit_granted: bool = False, six_month_region: bool | None = None,
-                           location: str = "") -> dict:
+                           location: str = "", holdings: list[dict] | None = None,
+                           sale_home: dict | None = None, heavy_facts: dict | None = None) -> dict:
     """양도세 특례 판정 오케스트레이터 (노드 N95-2-1·N95-2-2·N159의4-1·N104-7-1·N160-1).
+
+    - holdings(선택): 양도일 현재 1세대가 가진 주택·조합원입주권·분양권 목록(count_heavy_homes 와 같은 항목 규약, 양도주택 포함).
+      주면 heavy_home_count 를 쓰지 않고 조문 노드(tax_nodes.yangdo_jungkwa_ho.중과세율_판정 — 영 §167의3①·§167의10①·§167의4③·
+      §167의11①)가 중과 주택 수·계열·양도주택의 제외 사유(장기임대·상속 5년·일반주택·기준시가 1억 이하·한시배제·특례 1주택 등)를 정한다.
+      주지 않으면 종전 그대로 heavy_home_count 를 믿는다.
+    - sale_home(선택): 양도주택 항목. 없으면 holdings 에서 "양도대상": True 인 항목. 한시배제 사실(보유연수·매매계약일·계약금_수령·
+      토지거래허가_대상·토허_신청일·토허_허가·6개월_지역·소재지)이 항목에 없으면 이 함수의 인자에서 채운다.
+    - heavy_facts(선택): 노드가 읽는 그 밖의 사실(혼인일·혼인후_신규취득일·1주택간주_특례근거·154①요건충족 등).
 
     반환값을 calc_transfer_tax 인자(long_term_deduction_rate·surcharge_rate)로 연결.
     - is_one_household_one_home: 트리①·②의 출력(비과세 특례 간주 포함)
@@ -482,7 +491,26 @@ def judge_transfer_reliefs(is_one_household_one_home: bool, holding_years: float
     heavy = False
 
     s = date.fromisoformat(sale_date) if sale_date else None
-    if adjusted_at_sale and heavy_home_count >= 2 and not is_one_household_one_home:
+    node_heavy = None
+    if holdings is not None:
+        node_heavy = _heavy_from_holdings(holdings, sale_home, heavy_facts, sale_date, adjusted_at_sale, holding_years,
+                                          contract_date, deposit_received, contract_months_limit, land_permit_target,
+                                          land_permit_applied_date, land_permit_granted, six_month_region, location)
+        if node_heavy.get("오류"):
+            flags.append("holdings 로 중과를 판정하지 못했다 — %s. 중과 여부는 정해지지 않았다(heavy_home_count 는 쓰지 않았다)" % node_heavy["오류"])
+        else:
+            heavy_home_count = node_heavy["가산_주택수"] or 1
+            if node_heavy["중과적용"] and not is_one_household_one_home:
+                heavy, surcharge = True, node_heavy["중과가산세율"]
+                citations.append(_cite(f"조정지역 {heavy_home_count}주택 중과 +{int(surcharge*100)}%p — {node_heavy['적용호']}",
+                                       node_heavy.get("가산세율_근거") or "법 §104⑦", "A"))
+            elif node_heavy.get("적용호") or node_heavy.get("제외사유"):
+                citations.append(_cite("중과 대상 아님 — " + ("; ".join(node_heavy.get("제외사유") or []) or "해당 없음"),
+                                       "%s · 영 §167의3·§167의4·§167의10·§167의11 (조문 노드 판정)" % (node_heavy.get("적용호") or "법 §104⑦"), "A"))
+            if node_heavy["중과적용"] and is_one_household_one_home:
+                flags.append("holdings 로는 중과 대상 주택인데 is_one_household_one_home=True 다 — 비과세 특례로 1주택으로 보는 주택이면 "
+                             "heavy_facts 의 1주택간주_특례근거·154①요건충족으로 13호(15호) 제외를 확인할 것")
+    elif adjusted_at_sale and heavy_home_count >= 2 and not is_one_household_one_home:
         heavy = True
         surcharge, rate_basis = _heavy_surcharge(heavy_home_count, s)
         citations.append(_cite(f"조정지역 {heavy_home_count}주택 중과 +{int(surcharge*100)}%p", rate_basis, "A"))
@@ -529,7 +557,7 @@ def judge_transfer_reliefs(is_one_household_one_home: bool, holding_years: float
                      "§104① 후단·⑦ 후단 비교를 함수가 수행하고 결과의 '세율 비교' 항목에 "
                      "두 후보 세액이 함께 표시된다")
 
-    return {
+    out = {
         "비과세": exempt,
         "과세대상_양도차익_비율": round(taxable_ratio, 6),
         "중과여부": heavy,
@@ -539,6 +567,36 @@ def judge_transfer_reliefs(is_one_household_one_home: bool, holding_years: float
         "근거": citations,
         "주의": "세대·주택수 판정(트리①②)은 이 함수의 입력 — 여기서 판정하지 않음. 보유기간은 용도별 상이(비과세·장특공·세율) — N95-4-1",
     }
+    if node_heavy is not None:
+        out["중과판정"] = {k: node_heavy.get(k) for k in ("오류", "중과대상", "중과적용", "적용호", "중과계열", "가산_주택수", "제외사유",
+                                                    "명의신탁_제외", "분양권_아님", "비고") if node_heavy.get(k) is not None}
+        if node_heavy.get("오류"):
+            out["중과여부"] = None
+    return out
+
+
+def _heavy_from_holdings(holdings, sale_home, heavy_facts, sale_date, adjusted_at_sale, holding_years, contract_date,
+                         deposit_received, contract_months_limit, land_permit_target, land_permit_applied_date,
+                         land_permit_granted, six_month_region, location) -> dict:
+    """judge_transfer_reliefs(holdings=…) — 보유 목록으로 중과 주택 수·계열·제외를 조문 노드에 맡긴다(2026-11-18 연결)."""
+    from tax_nodes.yangdo_jungkwa_ho import 중과세율_판정
+    if not sale_date:
+        return {"오류": "sale_date(양도일)가 없다 — 한시배제·경과규정을 볼 수 없다"}
+    h = sale_home
+    if h is None:
+        marked = [it for it in holdings if it.get("양도대상")]
+        if len(marked) != 1:
+            return {"오류": "양도주택을 알 수 없다 — sale_home 을 주거나 holdings 의 한 항목에 '양도대상': True 를 표시할 것(현재 %d건)" % len(marked)}
+        h = marked[0]
+    h = dict(h)
+    for key, val in (("보유연수", holding_years), ("매매계약일", contract_date or None), ("계약금_수령", deposit_received or None),
+                     ("토지거래허가_대상", land_permit_target), ("토허_신청일", land_permit_applied_date or None),
+                     ("토허_허가", land_permit_granted or None), ("소재지", location or None),
+                     ("6개월_지역", six_month_region if six_month_region is not None
+                      else (True if (contract_months_limit == 6 and not location) else None))):
+        if key not in h and val is not None:
+            h[key] = val
+    return 중과세율_판정(h, holdings, sale_date, bool(adjusted_at_sale), **(heavy_facts or {}))
 
 
 # ── 3. 가족 간 차용 / 무상대출 스크리닝 ──────────────────────────────────────
@@ -780,10 +838,23 @@ def count_transfer_homes(items: list[dict]) -> dict:
       "농어촌주택특례": bool (§155⑦),
       "등록임대_거주주택특례": bool (§155⑳ 장기임대 — 거주주택 비과세 판정 시 제외),
       "라벨": str,
+      (선택) "명의신탁유형": "계약명의신탁"|"3자간등기명의신탁"|"2자간등기명의신탁", "명의신탁_지위": "신탁자"|"수탁자",
+        "상대방_명의신탁약정_인지": bool — 부동산실명법 §4② 노드가 귀속을 정해, 이 세대 것이 아니면 뺀다,
+      (선택) "지위_근거법률": str, "공급대상": "주택"|"오피스텔"…, "지위내용" — 종류가 분양권(또는 미기재)인 항목이 법 §88 10호·
+        영 §152의5의 분양권인지 노드가 정한다(아니면 뺀다),
+      (선택) "상속주택_지분내역": [{"지분": "6/15", "원인": "상속"|"매매"|"증여"}] — 상속특례주택·공동상속_소수지분 항목에 상속 외
+        원인으로 취득한 지분이 있으면 제외하지 않는다(영 §155②·③),
     }
     """
     counted, details, flags = 0, [], []
     combined_all_house = None
+    # 부동산실명법 §4②(명의신탁 주택의 귀속)·법 §88 10호(분양권의 범위) — 항목에 그 사실(명의신탁유형·명의신탁_지위 / 지위_근거법률)을
+    # 적으면 조문 노드가 판정해 이 세대 것이 아닌 항목을 뺀다. 그 키가 없는 항목은 종전대로 센다(2026-11-18 연결).
+    from tax_nodes.setdae_jutaeksu import _명의신탁_정리, _분양권범위_정리, 상속지분_매입분
+    items, _removed_trust = _명의신탁_정리(list(items))
+    items, _removed_right = _분양권범위_정리(items)
+    for lab, why in _removed_trust + _removed_right:
+        details.append({"항목": lab, "산입": False, "사유": why})
     for it in items:
         kind = it.get("종류", "주택")
         label = it.get("라벨") or kind
@@ -827,6 +898,8 @@ def count_transfer_homes(items: list[dict]) -> dict:
                 inc, why = False, "2021-01-01 전 취득 분양권 — 주택수 미산입 (소법 §88 10호 경과규정)"
             else:
                 why = "분양권 산입 (2021 이후 취득, §88 10호)"
+        elif (it.get("상속특례주택") or it.get("공동상속_소수지분")) and 상속지분_매입분(it):
+            why = "산입 — " + 상속지분_매입분(it) + " (영 §155②·③)"
         elif it.get("상속특례주택"):
             inc, why = False, "선순위 상속주택 특례 — 일반주택 비과세 판정 시 제외 (영 §155②, 별도세대 피상속인·동일세대 배제)"
         elif it.get("공동상속_소수지분"):
@@ -1300,8 +1373,10 @@ def count_heavy_homes(items: list[dict], heavy_tier: int = 3) -> dict:
     items 원소: {"종류": 주택|조합원입주권|분양권, "기준시가": 원(입주권=종전주택가·분양권=공급가),
     "지방소재": bool(수도권·광역시·특별자치시 밖 — 군·읍·면 포함), "인구감소등_12호": bool,
     "전용면적"·"취득가액"·"취득일"·"준공일"·"아파트": 12호 가목 소형 신축주택 판정용,
-    "정비구역": bool, "주거환경개선_사업시행자양도": bool, "라벨": str}.
-    반환 주택수를 judge_transfer_reliefs의 heavy_home_count로 연결.
+    "정비구역": bool, "주거환경개선_사업시행자양도": bool, "라벨": str,
+    (선택) "명의신탁유형"·"명의신탁_지위"·"상대방_명의신탁약정_인지", "지위_근거법률"·"공급대상"·"지위내용" — count_transfer_homes 와 같다}.
+    반환 주택수를 judge_transfer_reliefs의 heavy_home_count로 연결(또는 같은 목록을 judge_transfer_reliefs 의 holdings 로 넘기면
+    주택 수·계열·양도주택 제외 사유까지 조문 노드가 정한다).
 
     heavy_tier: 어느 계열로 세는지 — 2(2주택 중과, 영 §167의10) | 3(3주택 이상, 영 §167의3).
       수에서 빼는 주택은 두 계열이 같다(지방 3억 이하·12호). 기준시가 1억 이하 주택(영 §167의10①9호)은
@@ -1310,6 +1385,12 @@ def count_heavy_homes(items: list[dict], heavy_tier: int = 3) -> dict:
       (2026-11-17 전에는 heavy_tier=2 에서 이 주택을 수에서 뺐다 — findings 50.)
     """
     counted, details, low9 = 0, [], []
+    # 명의신탁 귀속(부동산실명법 §4②)·분양권의 범위(법 §88 10호) — count_transfer_homes 와 같은 선택 키. 없으면 종전 그대로(2026-11-18 연결).
+    from tax_nodes.setdae_jutaeksu import _명의신탁_정리, _분양권범위_정리
+    items, _removed_trust = _명의신탁_정리(list(items))
+    items, _removed_right = _분양권범위_정리(items)
+    for lab, why in _removed_trust + _removed_right:
+        details.append({"항목": lab, "산입": False, "사유": why})
     for it in items:
         label = it.get("라벨") or it.get("종류", "주택")
         std = int(it.get("기준시가", 0))
@@ -3380,13 +3461,20 @@ ATTACHED_LAND_MULTIPLES = {
 
 def calc_attached_land_limit(building_footprint_m2: float, land_area_m2: float,
                              is_urban_area: bool = True, is_capital_region: bool = True,
-                             urban_zone: str = "주거상업공업") -> dict:
+                             urban_zone: str = "주거상업공업",
+                             demolished_inherited_footprint_m2: float | None = None, sale_date: str = "") -> dict:
     """주택 부수토지의 1세대1주택 비과세 한도 면적 판정 (소법 §89①3호·영 §154⑦).
 
     비과세 범위 = 건물이 정착된 면적 × 배율. 초과분은 비과세에서 빠져 별도 과세된다.
     building_footprint_m2: 건물 정착면적(바닥면적 — 연면적 아님)
     urban_zone: 주거상업공업|녹지 (도시지역·수도권일 때만 구분)
+    demolished_inherited_footprint_m2(선택): 상속주택을 멸실하고 신축한 주택이면 멸실된 상속주택의 정착면적. 주면 조문 노드
+      (소득세법시행령-155-2-멸실신축-b)가 한도를 '멸실 전 정착면적 × 배율'로 정한다(sale_date 가 2022-01-01 전이면 도시지역 5배).
+      주지 않으면 종전 그대로 building_footprint_m2 기준이다.
     """
+    if demolished_inherited_footprint_m2 is not None:
+        return _attached_land_limit_rebuilt_inherited(building_footprint_m2, land_area_m2, is_urban_area, is_capital_region,
+                                                      urban_zone, demolished_inherited_footprint_m2, sale_date)
     if is_urban_area:
         if is_capital_region:
             zone = "녹지" if urban_zone == "녹지" else "주거상업공업"
@@ -3420,6 +3508,39 @@ def calc_attached_land_limit(building_footprint_m2: float, land_area_m2: float,
             _cite("비과세 범위 = 건물 정착면적 × 지역별 배율", "소법 §89①3호", "A"),
         ],
         "플래그": flags,
+    }
+
+
+def _attached_land_limit_rebuilt_inherited(building_footprint_m2, land_area_m2, is_urban_area, is_capital_region, urban_zone,
+                                           demolished_footprint_m2, sale_date) -> dict:
+    """상속주택 멸실·신축 — 부수토지 한도는 멸실된 상속주택 정착면적 기준(소득세법시행령-155-2-멸실신축-b, 2026-11-18 연결)."""
+    import tax_nodes.yangdo_gita_b  # noqa: F401
+    from tax_nodes.engine import 실행
+    zone = ("도시지역밖" if not is_urban_area else "수도권밖_도시" if not is_capital_region
+            else "수도권_녹지" if urban_zone == "녹지" else "수도권_주거상업공업")
+    facts = {"상속주택_멸실후신축": True, "멸실주택_정착면적": float(demolished_footprint_m2), "부수토지_용도지역": zone}
+    if sale_date:
+        facts["양도일"] = sale_date
+    r = 실행(facts, int(sale_date[:4]) if sale_date else 2026, 세목="양도세").값("상속주택_멸실신축_b")
+    limit = float(r["부수토지_비과세한도_㎡"])
+    excess = max(0.0, float(land_area_m2) - limit)
+    return {
+        "적용배율": r["배율"],
+        "지역구분": zone,
+        "비과세_한도면적_m2": round(limit, 2),
+        "초과면적_m2": round(excess, 2),
+        "전부비과세": excess == 0,
+        "한도기준": r["한도기준"],
+        "신축주택_정착면적_m2": float(building_footprint_m2),
+        "근거": [
+            _cite(f"{zone} → {r['배율']}배 (멸실된 상속주택 정착면적 {float(demolished_footprint_m2):g}㎡ 기준)",
+                  "소득세법 시행령 §155②·§154⑦ — 상속주택 멸실 후 신축은 상속주택의 연장, 부수토지 한도는 멸실 전 정착면적 기준"
+                  "(서면4팀-2283, 2005.11.23. — 노드 비고 인용, 원문 재확인 못함)", "C"),
+        ],
+        "플래그": [
+            "신축주택의 정착면적(%g㎡)이 아니라 멸실된 상속주택의 정착면적으로 한도를 계산했다 — 해석례 근거(법문 아님)" % float(building_footprint_m2),
+            "초과분은 1세대1주택 비과세에서 제외 — 비사업용 토지 해당 여부까지 별도 판정 필요(영 §168의6~14)",
+        ] + ([f"초과 {excess:,.1f}㎡ — 양도가액을 면적 안분해 과세분을 분리해야 한다"] if excess > 0 else []),
     }
 
 
@@ -4000,6 +4121,10 @@ def judge_156_3_from_portfolio(items: list[dict], sale_date: str, **kw) -> dict:
     """
     count = count_transfer_homes(items)
     by_label = {d["항목"]: d for d in count["항목별"]}
+    # 법 §88 10호·영 §152의5 — '지위_근거법률'을 적은 권리 항목은 노드가 분양권인지 정한다. 분양권이 아닌 지위(오피스텔 공급계약 등)는
+    # 아래 분양권 목록에서도 빠진다(count_transfer_homes 는 이미 뺐다). 2026-11-18 연결.
+    from tax_nodes.setdae_jutaeksu import _분양권범위_정리
+    items, _ = _분양권범위_정리(list(items))
 
     target = [it for it in items if it.get("양도대상")]
     if len(target) != 1:
