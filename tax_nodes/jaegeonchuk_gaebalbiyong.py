@@ -39,6 +39,7 @@ from __future__ import annotations
 import calendar
 from datetime import date
 
+import tax_params
 from tax_nodes.engine import 노드, 미적용, 세목설정
 
 세목설정("재건축부담금")
@@ -46,9 +47,15 @@ from tax_nodes.engine import 노드, 미적용, 세목설정
 _법 = "재건축초과이익 환수에 관한 법률"
 _영 = "재건축초과이익 환수에 관한 법률 시행령"
 _법MST, _영MST = "277019", "284841"
-_기준일 = date(2024, 3, 27)        # 영 §10의2 ②·④·⑤·⑦·⑧·⑩ 본문의 날짜(법률 제19850호 시행일)
-_저가주택_공시가격 = 300_000_000    # 영 §10의2⑦1호 본문
 _조합등 = ("조합", "공공시행자", "신탁업자", "주민합의체")
+
+
+def _k(ctx) -> dict:
+    """영 §10의2의 연령·기간·금액·날짜(2024년 3월 27일) — 1층 '재건축부담금.감경.다른주택기준'."""
+    ctx.상수근거["감경 다른 주택 기준"] = tax_params.cite("재건축부담금.감경.다른주택기준", ctx.연도)
+    v = dict(tax_params.get_param("재건축부담금.감경.다른주택기준", ctx.연도))
+    v["기준일"] = date.fromisoformat(v["기준일"])
+    return v
 
 
 def _d(v):
@@ -372,14 +379,16 @@ def 영제10조의2제2항(ctx):
     구 = _구성원(ctx)
     if not 구:
         return 미적용("세대구성원 미입력")
+    기준 = _k(ctx)["동거봉양_연령"]
+
     def 나이(m):
         return int(m.get("나이") or 0)
     존속 = [i for i, m in enumerate(구) if m.get("관계") in ("직계존속", "배우자직계존속")]
     비속 = [i for i, m in enumerate(구) if m.get("관계") in ("직계비속", "직계비속배우자")]
     out = []
-    if any(구[i].get("동거봉양합가") for i in 존속) and any(나이(구[i]) >= 60 for i in 존속):
+    if any(구[i].get("동거봉양합가") for i in 존속) and any(나이(구[i]) >= 기준 for i in 존속):
         out += [i for i in 존속 if 구[i].get("동거봉양합가")]                        # 1호
-    if any(구[i].get("동거봉양합가") for i in 비속) and any(나이(m) >= 60 for m in 구 if m.get("관계") in ("본인", "배우자")):
+    if any(구[i].get("동거봉양합가") for i in 비속) and any(나이(m) >= 기준 for m in 구 if m.get("관계") in ("본인", "배우자")):
         out += [i for i in 비속 if 구[i].get("동거봉양합가")]                        # 2호
     return sorted(out) if out else 미적용("동거봉양 합가로 별도 세대가 되는 사람이 없다")
 
@@ -397,6 +406,7 @@ def 영제10조의2제1항(ctx):
     if not 구:
         return 미적용("세대구성원 미입력")
     별도 = set(ctx.값("재초환_별도세대", None) or [])
+    미성년 = _k(ctx)["직계비속_연령_미만"]
     out = []
     for i, m in enumerate(구):
         관계 = m.get("관계")
@@ -409,7 +419,7 @@ def 영제10조의2제1항(ctx):
         elif 관계 in ("직계존속", "배우자직계존속"):
             들 = bool(m.get("같은주민등록표"))
         elif 관계 == "직계비속":
-            들 = int(m.get("나이") or 0) < 19 or bool(m.get("같은주민등록표"))
+            들 = int(m.get("나이") or 0) < 미성년 or bool(m.get("같은주민등록표"))
         else:                                   # 직계비속배우자 — 직계비속과 같은 주민등록표인 경우만
             들 = bool(m.get("같은주민등록표"))
         if 들:
@@ -492,12 +502,13 @@ def 영제10조의2제3항(ctx):
     산출=("재초환_오피스텔_간주",), 비고="돌려주는 값 {라벨: '미보유' | 간주취득일}. 법 §14의2② 노드가 종료시점 보유 여부에 반영한다.")
 def 영제10조의2제4항(ctx):
     out = {}
+    기준일 = _k(ctx)["기준일"]
     for h in _주택(ctx):
         취득 = _취득(ctx, h)
-        if h["유형"] != "주거용오피스텔" or 취득 is None or 취득 >= _기준일:
+        if h["유형"] != "주거용오피스텔" or 취득 is None or 취득 >= 기준일:
             continue
         처분 = _d(h.get("처분일"))
-        out[h["라벨"]] = "미보유" if 처분 and 처분 < _기준일 else _기준일.isoformat()
+        out[h["라벨"]] = "미보유" if 처분 and 처분 < 기준일 else 기준일.isoformat()
     return {"재초환_오피스텔_간주": out} if out else 미적용("2024-03-27 전에 취득한 주거용 오피스텔 없음")
 
 
@@ -513,6 +524,7 @@ def 영제10조의2제5항(ctx):
     if 종료 is None:
         return 미적용("부과종료일 미입력")
     out = {}
+    k = _k(ctx)
     for h in _주택(ctx):
         if h["유형"] not in ("상속", "혼인"):
             continue
@@ -522,9 +534,9 @@ def 영제10조의2제5항(ctx):
         기산 = _d(h.get("상속개시일") if h["유형"] == "상속" else h.get("혼인신고일"))
         if 기산 is None:
             continue
-        기산 = max(기산, _기준일)
-        if 종료 <= _addy(기산, 5):
-            out[h["라벨"]] = "%s — %s부터 종료시점까지 5년 이내" % (h["유형"], 기산.isoformat())
+        기산 = max(기산, k["기준일"])
+        if 종료 <= _addy(기산, k["상속혼인_보유연수_이내"]):
+            out[h["라벨"]] = "%s — %s부터 종료시점까지 %d년 이내" % (h["유형"], 기산.isoformat(), k["상속혼인_보유연수_이내"])
     return {"다른주택_제외_상속혼인": out} if out else 미적용("제외되는 상속·혼인 주택 없음")
 
 
@@ -536,9 +548,10 @@ def 영제10조의2제5항(ctx):
 def 영제10조의2제6항(ctx):
     고시 = _d(ctx.사실값("사업시행계획인가고시일"))
     후보 = []
+    최소거주 = _k(ctx)["대체거주_거주연수_이상"]
     for h in _주택(ctx):
         취득 = _취득(ctx, h)
-        if h["유형"] == "대체거주" and 고시 and 취득 and 취득 >= 고시 and float(h.get("거주연수") or 0) >= 1:
+        if h["유형"] == "대체거주" and 고시 and 취득 and 취득 >= 고시 and float(h.get("거주연수") or 0) >= 최소거주:
             후보.append((취득, h["라벨"]))
     if not 후보:
         return 미적용("요건을 갖춘 시행기간 거주용 주택 없음(고시일 이후 취득·1년 이상 거주)")
@@ -563,12 +576,13 @@ _요지("재초환법시행령-10의2-8", _영, "10의2", "저가주택 공시�
         "'하나의 주택' — 요건을 갖춘 것이 둘 이상이면 공시가격이 가장 낮은 하나만 뺀다(원문에 선택 기준 없음 — 이 엔진의 처리)."))
 def 영제10조의2제7항(ctx):
     후보 = []
+    k = _k(ctx)
     for h in _주택(ctx):
-        if h["유형"] != "저가" or h.get("공시가격") is None or _n(h["공시가격"]) > _저가주택_공시가격:
+        if h["유형"] != "저가" or h.get("공시가격") is None or _n(h["공시가격"]) > k["저가주택_공시가격_이하"]:
             continue
         취득 = _취득(ctx, h)
         투과 = bool(h.get("취득당시_투기과열지구"))
-        if 투과 and 취득 and 취득 < _기준일:
+        if 투과 and 취득 and 취득 < k["기준일"]:
             투과 = bool(h.get("기준일_투기과열지구", True))     # 2호 후단 — 2024-03-27을 취득일로 보아 그날 지정 여부로 판단
         if not 투과:
             후보.append((_n(h["공시가격"]), h["라벨"]))
@@ -614,15 +628,16 @@ def 제14조의2제2항(ctx):
 def 영제10조의2제10항(ctx):
     종료 = _종료(ctx)
     out = {}
+    k = _k(ctx)
     상혼 = ctx.값("다른주택_제외_상속혼인", None) or {}
     대체 = ctx.값("다른주택_제외_대체거주", None) or {}
     for h in _주택(ctx):
         if h["라벨"] in 상혼 and not str(상혼[h["라벨"]]).startswith("단서"):
             취득 = _d(h.get("상속개시일")) if h["유형"] == "상속" else (_취득(ctx, h) or _d(h.get("혼인신고일")))
             if 취득:
-                out[h["라벨"]] = _addy(max(취득, _기준일), 5).isoformat()
+                out[h["라벨"]] = _addy(max(취득, k["기준일"]), k["처분기한_상속혼인_연"]).isoformat()
         elif h["라벨"] in 대체 and 종료:
-            out[h["라벨"]] = _addy(max(종료, _기준일), 3).isoformat()
+            out[h["라벨"]] = _addy(max(종료, k["기준일"]), k["처분기한_대체거주_연"]).isoformat()
     return {"감경주택_처분기한": out} if out else 미적용("처분기한이 붙는 주택(법 §14의2②1호·2호) 없음")
 
 
