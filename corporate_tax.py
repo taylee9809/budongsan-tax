@@ -1,11 +1,17 @@
-"""법인의 부동산 양도 세액·비사업용 토지 판정 도구 — 호스팅 서버에 붙인다(tax_http.py). 생성 파일 tax_server.py 는 건드리지 않는다.
+"""법인 명의 부동산 도구 — 양도 세액·비사업용 토지 판정·주택분 종합부동산세·취득세. 호스팅 서버에 붙인다(tax_http.py).
+생성 파일 tax_server.py 는 건드리지 않는다.
 
-계산·판정은 전부 조문 노드(tax_nodes/beobin.py, tax_nodes/beobin_bisaeop.py)가 한다. 이 파일은 도구 입출력만 맡는다.
-세율은 data/tax_params.json 에서 사업연도 개시 연도로 읽고, 검증되지 않은 연도는 계산을 거부한다.
+계산·판정은 전부 조문 노드(tax_nodes/beobin.py, beobin_bisaeop.py, jongbu.py, jongbu_setdae.py, chwideuk.py, chwideuk_gwase.py)가 한다.
+이 파일은 도구 입출력만 맡는다. 세율은 data/tax_params.json 에서 연도로 읽고, 검증되지 않은 연도는 계산을 거부한다.
+
+calc_corporate_jongbu_tax · calc_corporate_acquisition_tax 는 2026-11-17 에 더했다. 생성 도구 calc_jongbu_tax 는 법인이면 호출자가
+공제 0원·세율표·세 부담 상한 배제를 직접 넘겨야 하는데 basic_deduction=0 이 '미지정'으로 읽혀 넘길 수조차 없고, calc_acquisition_tax 는
+대도시 법인 중과(지방세법 §13②)를 받는 입력이 없다(findings 95·97). 이 두 도구는 '법인'이라는 사실만 받고 나머지는 노드가 정한다.
 """
 from __future__ import annotations
 
-TOOLS = ("calc_corporate_property_sale_tax", "judge_corporate_non_business_land")
+TOOLS = ("calc_corporate_property_sale_tax", "judge_corporate_non_business_land",
+         "calc_corporate_jongbu_tax", "calc_corporate_acquisition_tax")
 
 #: 결과에 항상 붙이는 범위 고지 — 도구가 답하지 않는 것을 모델이 지어내지 않게 한다.
 NOT_COVERED = [
@@ -180,3 +186,282 @@ def judge_corporate_non_business_land(
     r["주의"] = notes
     r["다루지 않는 것"] = NON_BUSINESS_LAND_NOT_COVERED
     return r
+
+
+# ── 법인 주택분 종합부동산세 ────────────────────────────────────────────────
+#: calc_corporate_jongbu_tax 결과에 붙이는 범위 고지.
+JONGBU_NOT_COVERED = [
+    "재산세 — 종합부동산세와 따로 7월·9월에 고지된다. 주택은 calc_property_tax, 건축물은 calc_building_property_tax 로 계산한다. 이 도구는 종합부동산세에서 빼는 재산세액(§9③)만 계산한다.",
+    "토지분 종합부동산세(종합부동산세법 제3장 — 종합합산·별도합산 토지) — 도구가 없다. 상가 부속토지·나대지를 가진 법인의 토지분은 계산하지 않는다.",
+    "합산배제 주택(§8② — 등록 임대주택, 사원용 주택, 주택건설사업자의 미분양주택 등) 해당 여부와 9월 16일~30일 신고(§8③) — total_official_price 에서 이미 뺀 값을 받는다.",
+    "주택 수 계산(시행령 §4의3③ — 공동소유, 다가구주택, 합산배제 주택·상속주택 등의 제외) — home_count 는 호출자가 센 값을 그대로 쓴다.",
+    "공익법인등·공공주택사업자 등 해당 여부(§9②1·2호, 시행령 §4의4①)와 서류 제출 요건(시행령 §4의4②) — corporation_type 을 그대로 믿는다.",
+    "신탁주택의 납세의무자(§7②), 분납(§20), 조례로 가감된 재산세율(지방세법 §111③)·재산세 세 부담 상한(§122)이 적용된 실제 재산세 고지액.",
+]
+
+_JONGBU_TYPES = {
+    "일반": None, "공익법인": None,
+    "공공주택사업자": 1, "주택조합": 3, "정비사업시행자": 4, "민간건설임대사업자": 5,
+    "임대주택건설의무사업시행자": "5의2", "사회적기업등": 6, "종중": 7,
+}
+
+
+def calc_corporate_jongbu_tax(
+    year: int,
+    total_official_price: int,
+    home_count: int,
+    prev_year_official_price: int = 0,
+    corporation_type: str = "일반",
+    public_interest_use_only: bool = False,
+) -> dict:
+    """Korea comprehensive real estate holding tax (종합부동산세) on housing owned by a company on June 1: flat 2.7% (two homes or fewer) or 5% (three or more), no basic deduction, no tax burden cap (Comprehensive Real Estate Holding Tax Act art. 8(1)2, 9(2), 10 proviso), property-tax credit and rural special tax. Returns the statute trail.
+
+    법인(법인으로 보는 단체 포함)이 과세기준일(6월 1일)에 소유한 주택의 종합부동산세를 계산한다.
+
+    일반 법인은 종합부동산세법 §9②3호 — 2주택 이하 1천분의 27, 3주택 이상 1천분의 50의 단일세율이고,
+    공제금액이 0원이며(§8①2호), 세 부담 상한이 없다(§10 단서). 1세대 1주택자 세액공제(§9⑤)도 없다.
+    공시가격이 낮아도, 한 채뿐이어도 세액이 나온다. 6월 1일에 소유하고 있으면 그 해 전부를 낸다(§3, 지방세법 §114).
+    과세표준 = 공시가격 합계 × 공정시장가액비율(§8①, 시행령 §2의4①). 여기에서 주택분 재산세로 부과된 세액 중
+    과세표준에 해당하는 부분을 빼고(§9③, 시행령 §4의3①), 종합부동산세액의 100분의 20을 농어촌특별세로 더한다.
+    공익법인등·공공주택사업자·주택조합·정비사업 시행자·종중 등은 개인과 같은 누진세율과 공제 9억원이다(§9②1·2호, 시행령 §4의4①).
+
+    Args:
+        year: 과세연도(과세기준일 6월 1일이 속하는 해). 세율·비율 조회 키이며 필수다. 검증되지 않은 연도는 계산을 거부한다.
+        total_official_price: 6월 1일 현재 법인이 소유한 주택 공시가격의 합계(원). 합산배제 주택(§8②)은 빼고 넣는다.
+        home_count: 법인이 소유한 주택 수(시행령 §4의3③으로 센 값). 3 이상이면 5%, 2 이하면 2.7%. 추정해서 넣지 않는다.
+        prev_year_official_price: 같은 주택의 직전 연도 공시가격 합계(원). 재산세 과세표준 상한(지방세법 §110③)과
+            재산세액 공제 계산에 쓴다. 0이면 재산세액 공제를 계산하지 못해 세액이 더 크게 나온다(주의에 적힌다).
+        corporation_type: "일반"(§9②3호 단일세율) | "공익법인"(상속세 및 증여세법 §16의 공익법인등) |
+            "공공주택사업자" | "주택조합" | "정비사업시행자" | "민간건설임대사업자" | "임대주택건설의무사업시행자" |
+            "사회적기업등" | "종중" (시행령 §4의4① 각 호 — 요건은 호출자가 확인한다).
+        public_interest_use_only: corporation_type 이 "공익법인"일 때, 직접 공익목적사업에 사용하는 주택만 보유하면 True(§9②1호).
+
+    Returns:
+        세율구분, 공제금액, 과세표준, 적용세율, 산출세액, 재산세액 공제, 종합부동산세, 농어촌특별세, 총납부세액,
+        세부담상한 적용여부, 적용 조문, 미적용 조문(사유 포함), 값 출처, 주의, 다루지 않는 것.
+    """
+    from tax_nodes import jongbu, jongbu_setdae  # noqa: F401 — jongbu_setdae 에 법 §9②·영 §4의4 노드가 있다
+
+    if corporation_type not in _JONGBU_TYPES:
+        raise ValueError("corporation_type 은 %s 중 하나여야 합니다: %r" % (" | ".join(_JONGBU_TYPES), corporation_type))
+    if total_official_price <= 0:
+        raise ValueError("total_official_price 는 0보다 커야 합니다")
+    if not isinstance(home_count, int) or isinstance(home_count, bool) or home_count < 1:
+        raise ValueError("home_count 는 1 이상의 정수여야 합니다 — 2주택 이하와 3주택 이상의 세율이 다르다")
+    if public_interest_use_only and corporation_type != "공익법인":
+        raise ValueError("public_interest_use_only 는 corporation_type 이 \"공익법인\"일 때만 씁니다")
+    if int(year) < 2023:
+        raise ValueError("종합부동산세법 §9②는 2022. 12. 31. 개정됐다 — 그 전 과세연도의 법인 세율은 이 엔진에 검증된 값이 없어 계산하지 않습니다")
+    사실 = {"법인": True, "주택수": home_count}
+    if corporation_type == "공익법인":
+        사실.update(공익법인=True, 공익목적사업_주택만=bool(public_interest_use_only))
+    elif _JONGBU_TYPES[corporation_type] is not None:
+        사실["법인유형"] = _JONGBU_TYPES[corporation_type]
+    r = jongbu.종부세_주택(total_official_price, int(year), 직전연도_합산공시가격=prev_year_official_price or 0, **사실)
+    구분 = jongbu_setdae.법인_세율(연도=int(year), **{k: v for k, v in 사실.items() if k != "법인"})["세율구분"]
+    r.pop("근거표", None)
+    for k in ("1세대1주택자 세액공제율(연령+보유, 한도적용)", "1세대1주택자 세액공제액"):
+        r.pop(k, None)                      # 법인에는 §9⑤ 공제가 없다 — 0 이라는 숫자도 내보내지 않는다
+    단일 = 구분.startswith("3호")
+    notes = []
+    if r.get("과세표준") == 0:
+        r.setdefault("종합부동산세", 0)
+        r.setdefault("농어촌특별세", 0)
+        r.setdefault("총납부세액", 0)
+    else:
+        if not prev_year_official_price:
+            notes.append("prev_year_official_price 가 없어 재산세액 공제(§9③)를 계산하지 않았다 — 실제 세액은 이보다 작다")
+        elif home_count > 1:
+            notes.append("재산세액 공제는 공시가격 합계를 한 채로 보고 계산한 근사다 — 재산세는 주택별로 누진세율이 적용되므로 "
+                         "여러 채면 실제 공제액과 다르다(시행령 §4의3①의 분자·분모를 주택별 재산세로 다시 계산해야 한다)")
+    if 단일:
+        notes.append("§9②3호 법인은 공제금액 0원(§8①2호)·세 부담 상한 없음(§10 단서)이다 — 개인의 9억원 공제와 150% 상한을 적용하지 않았다")
+        notes.append("세액 산식은 §9① 노드가 §9②3호 단일세율표를 받아 계산한다 — 적용 조문의 §9①은 누진세율을 썼다는 뜻이 아니다")
+    else:
+        notes.append("%s — 개인과 같은 누진세율·공제 9억원(§8①3호)·세 부담 상한(§10)을 적용했다. 시행령 §4의4②의 서류를 "
+                     "9월 16일~30일에 내야 한다" % 구분)
+    if any("미검증" in str(v) for v in (r.get("값 출처") or {}).values()):
+        notes.append("%d년 값은 아직 검증되지 않아 현행법 기준으로 추정했다 — 값 출처에 표시된 항목을 그 해 시행 법령으로 확인해야 한다" % int(year))
+    notes.append("6월 1일에 소유한 자가 그 해 세액 전부를 낸다 — 6월 1일 전에 팔거나 6월 2일 이후에 사면 그 해 종합부동산세가 없다(§3·§7①)")
+    if 단일:
+        # 상한이 없으니 직전 연도 총세액상당액(시행령 §5②)과 §9⑤ 공제는 세액에 쓰이지 않았다 — 적용 조문에서 미적용으로 옮긴다
+        r.pop("직전연도 총세액상당액", None)
+        빼기 = {"종합부동산세법 §9⑤": "1세대 1주택자 세액공제 — 법인은 1세대 1주택자가 아니다",
+              "종합부동산세법 시행령 §5②": "직전 연도 총세액상당액 — §10 단서로 세 부담 상한이 없어 쓰지 않았다"}
+        r["미적용 조문"] = list(r.get("미적용 조문", [])) + [
+            {"표기": k, "제목": v.split(" — ")[0], "사유": v.split(" — ")[1]} for k, v in 빼기.items() if k in r.get("적용 조문", [])]
+        r["적용 조문"] = [c for c in r.get("적용 조문", []) if c not in 빼기]
+    out = {"납세의무자": "법인", "세율구분": 구분, "주택수": home_count}
+    out.update(r)
+    out["주의"] = notes
+    out["다루지 않는 것"] = JONGBU_NOT_COVERED
+    return out
+
+
+# ── 법인 취득세 (대도시 중과 포함) ──────────────────────────────────────────
+#: calc_corporate_acquisition_tax 결과에 붙이는 범위 고지.
+ACQUISITION_NOT_COVERED = [
+    "과세표준 산정(지방세법 §10~§10의6) — acquisition_price 를 그대로 쓴다. 경매는 낙찰대금 외에 인수하는 채무·비용이 사실상의 취득가격에 들어갈 수 있다.",
+    "대도시 해당 여부 — 수도권정비계획법 §6의 과밀억제권역(산업단지 제외)인지는 수도권정비계획법 시행령 별표 1과 산업단지 지정으로 확인한다. 이 도구는 입력을 그대로 믿는다.",
+    "본점·주사무소·지점·분사무소 해당 여부와 그 설립·설치·전입일의 사실 판단(시행령 §27③, 시행규칙이 정하는 사무소등) — 입력을 그대로 믿는다.",
+    "대도시 중과 제외 업종(시행령 §26① 각 호) 해당 여부와 사후관리(지방세법 §13③④ — 1년 내 미사용·2년 내 매각 등으로 다시 중과).",
+    "과밀억제권역 본점용 신축·증축과 공장 신설·증설(§13①, §13②2호), 사치성 재산(§13⑤ 고급주택·고급오락장 등)과 그 중복(§13⑥⑦, §13의2③).",
+    "휴면법인 인수 여부(시행령 §27①), 분할·합병 예외(§27④⑤), 신탁재산(§27⑥), 과점주주 간주취득(§7⑤), 조례에 의한 세율 조정(§14), 감면(지방세특례제한법).",
+    "주택 유상거래 중과 예외 가운데 시가표준액 기준(시행령 §28의2 1호) 밖의 호 — 해당 호를 입력으로 받을 뿐 그 호의 요건은 판정하지 않는다.",
+    "등기 비용(등록면허세·인지세·국민주택채권), 부가가치세.",
+]
+
+_ACQ_KIND = {"주택": "주택유상", "주택외": "유상.농지외", "농지": "유상.농지"}
+
+
+def _acq_parts(r: dict) -> dict:
+    return {"적용세율": r["적용세율(표준+중과+조례)"], "세율근거": r["세율근거"], "취득세": r["취득세"],
+            "지방교육세": r["지방교육세"], "농어촌특별세": r["농어촌특별세"], "총납부세액": r["총납부세액"]}
+
+
+def calc_corporate_acquisition_tax(
+    acquisition_price: int,
+    acquire_date: str,
+    property_kind: str,
+    property_in_metro: bool | None = None,
+    metro_office_date: str | None = None,
+    no_metro_office: bool = False,
+    excluded_business: bool = False,
+    exclusive_area: float | None = None,
+    standard_value: int | None = None,
+    in_capital_area: bool | None = None,
+    in_redevelopment_zone: bool = False,
+    heavy_exception_item: str | None = None,
+) -> dict:
+    """Korea acquisition tax (취득세) when a company buys real estate for consideration (purchase or auction): 12% on housing (Local Tax Act art. 13-2(1)1) with the low-value home exception, and the large-city surcharge on companies set up or moved into the Seoul overconcentration zone within five years (art. 13(2): standard rate x3 minus 4%p, e.g. 8% on shops and land), plus local education tax and rural special tax. Returns the statute trail.
+
+    법인이 부동산을 유상(매매·경매)으로 취득할 때의 취득세·지방교육세·농어촌특별세를 계산한다.
+
+    두 가지 중과를 본다. (1) 법인의 주택 취득 — 지방세법 §13의2①1호, 주택 수와 무관하게 12%(§11①7호나목 4% + 중과기준세율
+    2%의 400%). 시가표준액이 수도권 1억원·그 밖의 지역 2억원 이하인 주택 등 시행령 §28의2 각 호의 주택은 중과에서 빠져
+    §11①8호의 1~3%다. (2) 대도시 법인 중과 — §13②1호. 과밀억제권역(산업단지 제외)에서 법인을 설립하거나 지점을 설치하거나
+    본점·지점을 대도시로 전입한 뒤 5년 이내에 대도시의 부동산을 취득하면(시행령 §27③ — 업무용·비업무용을 가리지 않는다)
+    표준세율의 3배에서 중과기준세율의 2배를 뺀 세율이다: 주택 외 부동산 4%×3 − 4% = 8%, 농지 3%×3 − 4% = 5%.
+    주택은 §13② 괄호로 §13의2①1호 세율(12%)이다. 대도시 중과 제외 업종(시행령 §26①)에 직접 쓸 목적이면 §11 세율이다.
+    대도시 중과 여부를 정할 사실이 모자라면 추정하지 않고 대도시중과=None 과 두 경우의 세액을 함께 돌려준다.
+
+    Args:
+        acquisition_price: 취득가액 — 과세표준(원). 경매는 낙찰대금에 인수한 채무 등을 더한 사실상의 취득가격.
+        acquire_date: 취득일(잔금일·경매 대금 납부일) "YYYY-MM-DD". 그 연도의 세율(검증된 연도만)로 계산한다.
+        property_kind: "주택" | "주택외"(상가·사무실·오피스텔·토지 등 주택과 농지가 아닌 부동산) | "농지".
+        property_in_metro: 취득하는 부동산이 대도시(과밀억제권역, 산업단지 제외) 안에 있는지. 모르면 None.
+        metro_office_date: 법인의 본점·주사무소·지점·분사무소가 대도시에서 설립·설치되거나 대도시로 전입한 날
+            "YYYY-MM-DD"(서울 밖 수도권에서 서울로 옮긴 것도 전입이다 — §13②1호). 휴면법인을 인수했으면 그 법인의
+            과점주주가 처음 된 날(시행령 §27②). 여러 사무소가 있으면 가장 최근의 설립·설치·전입일.
+        no_metro_office: 대도시 안에 본점·지점 등이 없고 이 취득으로도 설치하지 않으면 True — 대도시 중과가 아니다.
+        excluded_business: 대도시 중과 제외 업종(시행령 §26① 각 호)에 직접 사용할 목적의 취득이면 True.
+        exclusive_area: 주택의 전용면적(㎡). 85 이하면 농어촌특별세가 붙지 않는다(농어촌특별세법 §4 11호). 주택일 때만.
+        standard_value: 주택의 시가표준액(원, 지분·부속토지만 취득해도 주택 전체 기준). 시행령 §28의2 1호 판정에 쓴다.
+        in_capital_area: 주택이 수도권(서울·인천·경기)에 있는지. standard_value 를 줄 때 필요하다.
+        in_redevelopment_zone: 주택이 정비구역·소규모주택정비 사업시행구역에 있으면 True — 1호 예외에서 제외된다.
+        heavy_exception_item: 시행령 §28의2의 1호 밖 다른 호에 해당하면 그 호 번호("3", "8", "12" 등). 요건은 호출자가 확인한다.
+
+    Returns:
+        법인주택중과, 주택중과_예외, 대도시중과(True·False·None), 대도시중과_사유, 적용세율, 세율근거, 취득세, 지방교육세,
+        농어촌특별세, 총납부세액 (대도시중과가 None 이면 세액 대신 경우별_세액), 적용 조문, 미적용 조문, 값 출처, 주의, 다루지 않는 것.
+    """
+    from tax_nodes.chwideuk import 취득세_부동산
+    from tax_nodes.chwideuk_gwase import 대도시중과_범위, 주택중과_예외
+
+    if property_kind not in _ACQ_KIND:
+        raise ValueError("property_kind 는 %s 중 하나여야 합니다: %r" % (" | ".join(_ACQ_KIND), property_kind))
+    if acquisition_price <= 0:
+        raise ValueError("acquisition_price 는 0보다 커야 합니다")
+    if not acquire_date or len(acquire_date) != 10:
+        raise ValueError("acquire_date 는 \"YYYY-MM-DD\" 로 줍니다 — 세율과 대도시 5년 기간의 기준일이다")
+    if no_metro_office and metro_office_date:
+        raise ValueError("no_metro_office 와 metro_office_date 를 함께 줄 수 없습니다")
+    주택 = property_kind == "주택"
+    if not 주택 and (exclusive_area is not None or standard_value is not None or heavy_exception_item is not None
+                   or in_redevelopment_zone):
+        raise ValueError("exclusive_area · standard_value · in_redevelopment_zone · heavy_exception_item 은 주택일 때만 씁니다")
+    if standard_value is not None and in_capital_area is None:
+        raise ValueError("standard_value 를 주면 in_capital_area(수도권 여부)도 줘야 합니다 — 기준액이 1억원과 2억원으로 갈린다")
+    연도 = int(acquire_date[:4])
+    notes, 출처 = [], {}
+
+    # (1) 주택 중과 예외 — 시행령 §28의2
+    예외, 예외정보 = False, None
+    if 주택:
+        e = 주택중과_예외(취득일=acquire_date, 시가표준액=standard_value, 수도권=bool(in_capital_area),
+                    정비구역=in_redevelopment_zone, 주택중과_예외호=heavy_exception_item)
+        예외 = e["중과예외"]
+        예외정보 = {"해당": 예외, "호": e["호"], "근거": e["근거"]}
+        if 예외 and e["근거"]:
+            출처["주택 중과 예외"] = e["근거"]
+        if standard_value is None and heavy_exception_item is None:
+            notes.append("standard_value(시가표준액)가 없어 시행령 §28의2 1호(수도권 1억원·그 밖 2억원 이하 주택)를 보지 못했다 — "
+                         "해당하면 12%가 아니라 1~3%다")
+
+    # (2) 대도시 중과 — 법 §13②1호, 시행령 §27③
+    대도시, 사유 = None, None
+    if property_in_metro is False:
+        대도시, 사유 = False, "취득하는 부동산이 대도시(과밀억제권역, 산업단지 제외) 밖이다"
+    elif no_metro_office:
+        대도시, 사유 = False, "대도시 안에 본점·지점 등이 없고 설치하지도 않는다 — §13②1호의 설립·설치·전입에 따른 취득이 아니다"
+    elif property_in_metro is None:
+        사유 = "property_in_metro(부동산이 대도시 안인지)를 모른다"
+    elif not metro_office_date:
+        사유 = "metro_office_date(대도시 안 본점·지점의 설립·설치·전입일)를 모른다 — 대도시에 사무소가 없으면 no_metro_office=True"
+    else:
+        범위 = 대도시중과_범위(대도시_설립전입일=metro_office_date, 취득일=acquire_date)["대도시중과_취득범위"]
+        출처["대도시 중과 범위"] = "지방세법 시행령 §27③ — %s" % 범위
+        if isinstance(범위, str) and 범위.startswith("설립·전입 후 5년 이내"):
+            대도시, 사유 = True, "대도시 설립·설치·전입(%s) 후 5년 이내의 대도시 부동산 취득 — 용도를 가리지 않는다(시행령 §27③)" % metro_office_date
+        elif isinstance(범위, str) and 범위.startswith("설립·전입 후 5년 경과"):
+            대도시, 사유 = False, "대도시 설립·설치·전입(%s) 후 5년이 지났다(시행령 §27③)" % metro_office_date
+        else:
+            사유 = ("취득일이 설립·설치·전입일(%s)보다 앞선다 — 설립·전입 전 취득은 본점·지점 용도로 직접 사용하기 위한 것만 "
+                  "중과다(시행령 §27③). 이 도구는 그 용도를 판정하지 않는다" % metro_office_date)
+        notes.append("5년은 설립·설치·전입일부터 취득일까지 5×365일 이내인지로 셌다 — 만 5년이 되는 날 전후 하루 이틀은 확인이 필요하다")
+    if 대도시 and excluded_business:
+        notes.append("대도시 중과 제외 업종에 직접 사용할 목적이라 §11 세율을 적용했다(§13② 단서). 취득 후 1년 안에 그 업종에 쓰지 않거나 "
+                     "2년 이상 쓰지 않고 팔면 중과세율로 추징된다(§13③)")
+
+    def 계산(중과: bool) -> dict:
+        return 취득세_부동산(acquisition_price, 연도, _ACQ_KIND[property_kind], 취득일=acquire_date,
+                        법인=(주택 and not 예외) or None, 전용면적=exclusive_area if 주택 else None,
+                        대도시_법인설립전입_부동산=True if 중과 else None,
+                        대도시_중과제외업종=True if (중과 and excluded_business) else None)
+
+    out = {"납세의무자": "법인", "취득가액": acquisition_price, "취득일": acquire_date, "부동산": property_kind,
+           "법인주택중과": bool(주택 and not 예외) if 주택 else None, "주택중과_예외": 예외정보,
+           "대도시중과": 대도시, "대도시중과_사유": 사유}
+    if 대도시 is None:
+        아님, 중과 = 계산(False), 계산(True)
+        같음 = _acq_parts(아님) == _acq_parts(중과)
+        if 같음:                                   # 법인 주택 12%는 대도시 여부와 무관하다
+            r = 아님
+            out["대도시중과_사유"] = 사유 + " — 다만 이 취득은 어느 쪽이든 세액이 같다"
+            out.update(_acq_parts(r))
+        else:
+            r = 중과
+            out.update({"적용세율": None, "세율근거": None, "취득세": None, "지방교육세": None, "농어촌특별세": None,
+                        "총납부세액": None,
+                        "경우별_세액": {"대도시 중과 아님": _acq_parts(아님), "대도시 중과": _acq_parts(중과)}})
+            notes.append("대도시 중과 여부를 정하지 못해 세액을 하나로 내지 않았다 — 경우별_세액의 두 값 가운데 어느 쪽인지는 "
+                         "대도시중과_사유에 적힌 사실로 갈린다. 둘 중 하나를 골라 답하지 않는다")
+            미적용 = 아님["미적용 조문"]
+            out.update({"적용 조문": 아님["적용 조문"], "미적용 조문": 미적용, "값 출처": dict(아님["값 출처"], **출처)})
+            out["주의"] = notes
+            out["다루지 않는 것"] = ACQUISITION_NOT_COVERED
+            return out
+    else:
+        r = 계산(bool(대도시))
+        out.update(_acq_parts(r))
+    if 주택 and 예외 and 대도시 and not excluded_business:
+        notes.append("시행령 §28의2는 '법 §13의2①을 적용할 때'의 예외다. 대도시 중과(§13②)는 괄호에서 주택에 §13의2①1호 '세율'을 쓰라고만 하므로 "
+                     "문언대로 12%를 적용했다 — 시가표준액 기준 이하 주택이 대도시 중과에서도 빠지는지는 공식 해석례를 확인하지 못했다")
+    if 주택 and exclusive_area is None:
+        notes.append("exclusive_area 가 없어 농어촌특별세를 과세로 계산했다 — 전용 85㎡ 이하 주택이면 농어촌특별세가 없다")
+    if 주택 and not 예외:
+        notes.append("법인의 주택 취득은 주택 수·조정대상지역과 무관하게 12%다(§13의2①1호)")
+    out.update({"적용 조문": r["적용 조문"], "미적용 조문": r["미적용 조문"], "값 출처": dict(r["값 출처"], **출처)})
+    out["주의"] = notes
+    out["다루지 않는 것"] = ACQUISITION_NOT_COVERED
+    return out
