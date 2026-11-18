@@ -1,7 +1,7 @@
 """분업 4차 '요약표 밖 조문' 묶음 (2026-11-18) — 제목 분류 때문에 커버리지 표에 안 잡히고 노드도 없던 조문 23개와 조특법 신설 4개.
 
 1. 케이스 파일 data/verification/node_cases/hidden4_rest.jsonl (H4R-*) 전체 — 기대값은 원문 기준액·산식에서 손으로 계산한 것
-2. 도구 케이스 HR-* (calc_corporate_property_sale_tax 의 small_rental_facts)
+2. (법인세 성실신고 소규모 법인 판정은 조정 세션 지시로 제외 — 비공개 원본의 법인세 노드를 가져오기로 했다)
 3. 새 노드가 등록돼 있고 원문·MST 를 들고 있는가, 호·목 구멍을 새로 만들지 않았는가
 4. 연결 전 호출이 그대로인가 — 새 사실을 주지 않으면 기존 합성 함수의 결과에 새 키가 붙지 않고 값도 같다
 5. 서로 대조되는 두 구현이 같은 답을 내는가 — 영 §167의2① 통산(새 노드) vs 법 §102② 노드, 영 §168의7 vs 법인세법 시행령 §92의4,
@@ -19,22 +19,18 @@ import pytest
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-import corporate_tax  # noqa: E402
 import tax_judgment  # noqa: E402
 import tax_params  # noqa: E402
 from tax_nodes.engine import 모두올림, 실행, 전체  # noqa: E402
 
 모두올림()
-from tax_nodes import beobin, jaegeonchuk, jongbu, yangdo_bisaeop, yangdo_tongsan  # noqa: E402
+from tax_nodes import jaegeonchuk, jongbu, yangdo_bisaeop, yangdo_tongsan  # noqa: E402
 
 verify_node_cases = importlib.import_module("verify_node_cases")
-verify_tool_cases = importlib.import_module("verify_tool_cases")
 node_coverage = importlib.import_module("node_coverage")
 
 _CASES = [json.loads(l) for l in (ROOT / "data" / "verification" / "node_cases" / "hidden4_rest.jsonl").read_text(encoding="utf-8").splitlines() if l.strip()]
-_TOOL_CASES = [json.loads(l) for l in (ROOT / "data" / "verification" / "cases.jsonl").read_text(encoding="utf-8").splitlines()
-               if l.strip() and json.loads(l)["case_id"].startswith("HR-")]
-_새모듈 = ("jaegeonchuk_gaebalbiyong", "yangdo_tongsan", "yangdo_jotuk_ijeon", "beobin_seongsil", "jongbu_napbu", "chwideuk_singo", "jotuk_sinseol")
+_새모듈 = ("jaegeonchuk_gaebalbiyong", "yangdo_tongsan", "yangdo_jotuk_ijeon", "jongbu_napbu", "chwideuk_singo", "jotuk_sinseol")
 _새노드 = {k: n for k, n in 전체().items() if n.fn.__module__.rsplit(".", 1)[-1] in _새모듈}
 
 #: 이번에 노드가 생긴 조문 — (법령, 조). 요약표 밖 23개 + 조특법 신설 4개 + 호·목 1개가 걸린 조문.
@@ -46,7 +42,6 @@ _대상조문 = [
     ("조세특례제한법", "32"), ("조세특례제한법 시행령", "70"),
     ("종합부동산세법", "20의2"), ("종합부동산세법 시행령", "4의5"), ("종합부동산세법 시행령", "16의2"), ("농어촌특별세법", "6"), ("농어촌특별세법", "7"),
     ("지방세법", "20"), ("지방세법 시행령", "34"), ("지방세법 시행령", "37"),
-    ("법인세법 시행령", "42"),
     ("조세특례제한법", "23의2"), ("조세특례제한법", "91의26"), ("조세특례제한법", "91의27"), ("조세특례제한법", "91의28"),
 ]
 
@@ -67,17 +62,6 @@ def test_h4r_case(case):
     assert ok, detail
 
 
-@pytest.mark.parametrize("case", _TOOL_CASES, ids=[c["case_id"] for c in _TOOL_CASES])
-def test_hr_tool_case(case):
-    assert case["tool"] == "calc_corporate_property_sale_tax"
-    res = corporate_tax.calc_corporate_property_sale_tax(**json.loads(case["input_json"]))
-    assert verify_tool_cases._same(json.loads(case["expected_json"]), res[case["expected_key"]]), (case["expected_사유"], res[case["expected_key"]])
-
-
-def test_tool_cases_exist():
-    assert len(_TOOL_CASES) == 10
-
-
 # ------------------------------------------------------------------ 3. 등록·원문·호목
 @pytest.mark.parametrize("법령,조", _대상조문)
 def test_target_article_has_node(법령, 조):
@@ -88,14 +72,14 @@ def test_new_nodes_carry_text_and_current_mst():
     현행 = {"재건축초과이익 환수에 관한 법률": "277019", "재건축초과이익 환수에 관한 법률 시행령": "284841", "소득세법": "280405", "소득세법 시행령": "290841",
           "조세특례제한법": "284389", "조세특례제한법 시행령": "288915", "종합부동산세법": "280417", "종합부동산세법 시행령": "290557",
           "농어촌특별세법": "285905", "지방세법": "282559", "지방세법 시행령": "290815", "법인세법": "280349", "법인세법 시행령": "290843"}
-    assert len(_새노드) >= 150
+    assert len(_새노드) >= 130
     for nid, n in _새노드.items():
         assert n.원문.strip() and n.제목.strip() and n.산출, nid
         assert n.mst == 현행[n.법령], (nid, n.mst)
 
 
 def test_no_new_subunit_gap():
-    """호 단위로 옮긴 조문(§2·§11①·영 §9①·영 §34·영 §37·영 §42②·법 §60의2①·§32⑤·§104⑤·영 §167의2①·§20의2①·조특령 §99의2③)에 빠진 형제 호가 없다."""
+    """호 단위로 옮긴 조문(§2·§11①·영 §9①·영 §34·영 §37·§32⑤·§104⑤·영 §167의2①·§20의2①·조특령 §99의2③)에 빠진 형제 호가 없다."""
     subunits = json.loads(node_coverage.SUBUNITS.read_text(encoding="utf-8"))
     dispositions = {k: v for k, v in json.loads(node_coverage.DISPOSITIONS.read_text(encoding="utf-8")).items() if not k.startswith("_")}
     gaps = node_coverage.subunit_gaps(전체(), subunits, dispositions)
@@ -103,7 +87,7 @@ def test_no_new_subunit_gap():
 
 
 def test_params_rows_have_source():
-    for 키 in ("종부세.납부유예.요건", "종부세.납부유예.이자율", "법인세.성실신고소규모법인.요건", "재건축부담금.감경.다른주택기준", "취득세.신고납부기한",
+    for 키 in ("종부세.납부유예.요건", "종부세.납부유예.이자율", "재건축부담금.감경.다른주택기준", "취득세.신고납부기한",
               "양도세.지정지역.가산세율", "조특.외국자회사수입배당금.익금불산입", "조특.국내시장복귀계좌", "조특.환율변동위험회피상품", "조특.국민성장집합투자증권저축"):
         row = tax_params.get_row(키, 2026)
         assert row["근거"] and row["MST"] and row["검증연도"] == [2026] and row["확인일"] == "2026-11-18", 키
@@ -145,17 +129,6 @@ def test_levy_explicit_one_home_fact_wins_over_other_homes():
               세대_다른주택=[{"라벨": "일반", "유형": "일반", "취득일": "2020-01-01"}], **{"1세대1주택_보유연수": 12})
     assert jaegeonchuk.재건축부담금(**kw)["감경률"] == 0.0
     assert jaegeonchuk.재건축부담금(종료시점_1세대1주택=True, **kw)["감경률"] == 0.5
-
-
-@pytest.mark.parametrize("과세표준", [100_000_000, 1_000_000_000, 30_000_000_000])
-@pytest.mark.parametrize("소규모", [False, True])
-def test_corporate_tool_without_facts_is_unchanged(과세표준, 소규모):
-    r = corporate_tax.calc_corporate_property_sale_tax(2026, [], taxable_base=과세표준, small_rental_corporation=소규모)
-    assert "성실신고소규모법인_판정" not in r
-    assert r["적용세율표"] == ("§55①2호" if 소규모 else "§55①1호")
-    n = beobin.법인_부동산양도(2026, [], 과세표준=과세표준, 성실신고소규모법인=소규모)
-    assert "성실신고소규모법인_판정" not in n and n["법인세_각사업연도소득"] == r["법인세_각사업연도소득"]
-    assert not any("§42" in a or "§97의4" in a for a in r["적용 조문"])
 
 
 @pytest.mark.parametrize("공시가격", [1_500_000_000, 2_500_000_000, 5_000_000_000])

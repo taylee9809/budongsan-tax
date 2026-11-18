@@ -29,7 +29,6 @@ def calc_corporate_property_sale_tax(
     taxable_base: int | None = None,
     small_rental_corporation: bool = False,
     business_year_months: int = 12,
-    small_rental_facts: dict | None = None,
 ) -> dict:
     """Korea corporate tax when a company sells real estate: regular corporate tax on the taxable base, the additional tax on gains from housing, non-business land and housing rights (Corporate Tax Act art. 55-2), and local corporate income tax. Returns the statute trail.
 
@@ -57,12 +56,6 @@ def calc_corporate_property_sale_tax(
             주된 사업이거나 임대·이자·배당 수입이 매출액의 50% 이상 + 상시근로자 5명 미만(시행령 §42②)을 모두 갖춘
             법인. 200억원 이하 구간에 20%가 적용된다. 매매가 주된 사업이면 해당하지 않는다.
         business_year_months: 사업연도 월수. 12 미만이면 §55② 환산을 적용한다.
-        small_rental_facts: (선택) small_rental_corporation 을 직접 판정하지 않고 사실로 줄 때 — 시행령 §42② 각 호의 사실.
-            {"지배주주등_지분율": 0~1, "주된사업_부동산임대업": bool 또는 "사업별수입금액": {사업명: 금액},
-             "임대수입": 원, "이자소득": 원, "배당소득": 원, "매출액": 원, "상시근로자수": 명(또는 "월말_상시근로자수": [..]),
-             "유동화전문회사등": bool, "프로젝트금융투자회사": bool}
-            주면 법인세법 §60의2①1호·시행령 §97의4②·§42②로 판정해 세율표를 고르고 결과에 "성실신고소규모법인_판정"을 싣는다.
-            small_rental_corporation=True 를 함께 주면 그 값이 먼저다. 주지 않으면 결과는 기존과 같다.
 
     Returns:
         세목별 세액, 자산별 양도소득·세율·사유, 적용 조문, 미적용 조문(사유 포함), 값 출처, 다루지 않는 것.
@@ -74,9 +67,7 @@ def calc_corporate_property_sale_tax(
     if taxable_base is not None and taxable_base < 0:
         raise ValueError("taxable_base 는 0 이상이어야 합니다 — 결손이면 0을 넣는다")
     r = beobin.법인_부동산양도(business_year, sales or [], 과세표준=taxable_base,
-                         성실신고소규모법인=small_rental_corporation, 사업연도_월수=business_year_months,
-                         성실신고_사실=small_rental_facts or None)
-    판정 = r.pop("성실신고소규모법인_판정", None)
+                         성실신고소규모법인=small_rental_corporation, 사업연도_월수=business_year_months)
     r.pop("근거표", None)
     total = sum(v for v in (r["법인세_각사업연도소득"], r["토지등양도소득_법인세"],
                             r["법인지방소득세_각사업연도소득"], r["법인지방소득세_토지등양도"]) if v is not None)
@@ -85,10 +76,7 @@ def calc_corporate_property_sale_tax(
         notes.append("taxable_base 가 없어 각 사업연도 소득에 대한 법인세·법인지방소득세는 계산하지 않았다 — 합계는 토지등 양도소득 추가과세분뿐이다")
     if any(a["세율"] > 0 for a in r["자산별"]):
         notes.append("토지등 양도소득에 대한 법인세는 과세표준에 대한 법인세와 따로 계산해 더한다 — 같은 양도차익이 과세표준에도 들어간다")
-    if 판정 is not None and 판정["판정"] is None:
-        notes.append("small_rental_facts 가 시행령 §42② 각 호를 판정하기에 부족하다 — §55①1호(일반) 세율표로 계산했다")
     return {
-        **({"성실신고소규모법인_판정": 판정} if 판정 is not None else {}),
         "사업연도": business_year,
         "과세표준": taxable_base,
         "법인세_각사업연도소득": r["법인세_각사업연도소득"],
