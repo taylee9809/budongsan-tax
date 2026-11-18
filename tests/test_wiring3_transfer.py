@@ -56,7 +56,7 @@ def test_property_tax_without_relief_type_is_unchanged(가액, 일주택):
 def test_property_tax_picks_larger_relief():
     전세 = {"전세사기피해자": True, "전세사기피해주택": True}
     r = 재산세_주택(300_000_000, 2026, 일세대일주택=True, 지방세특례_감면유형="전세사기피해자", 지방세특례_사실=dict(전세, 전용면적=59))
-    assert r["재산세 본세"] == 163_500 and r[K]["특례세율_배제"] is True and r[K]["지특법경감후_세액"] == 81_750
+    assert r["재산세 본세"] == 81_750 and r[K]["감면전_재산세_본세"] == 163_500 and r[K]["특례세율_배제"] is True and r[K]["지특법경감후_세액"] == 81_750   # 6차(2026-11-18): 본세는 감면 후 금액
     assert any(m["표기"] == "지방세법 §111의2①" and "제4항" in m["사유"] for m in r["미적용 조문"])
     r = 재산세_주택(300_000_000, 2026, 일세대일주택=True, 지방세특례_감면유형="전세사기피해자", 지방세특례_사실=dict(전세, 전용면적=84))
     assert r["재산세 본세"] == 99_000 and r[K]["특례세율_배제"] is False
