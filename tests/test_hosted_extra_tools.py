@@ -2,7 +2,8 @@
 import tax_http
 
 EXTRA = {"get_acquisition_tax_checklist", "calc_corporate_property_sale_tax",
-         "judge_corporate_non_business_land", "calc_building_property_tax"}
+         "judge_corporate_non_business_land", "calc_building_property_tax",
+         "calc_corporate_jongbu_tax", "calc_corporate_acquisition_tax", "get_tax_scope"}
 
 
 def test_extra_tools_registered_read_only():

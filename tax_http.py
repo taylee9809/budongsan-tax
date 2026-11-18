@@ -13,7 +13,9 @@ from starlette.responses import FileResponse, HTMLResponse, JSONResponse, PlainT
 import tax_server
 from acquisition_checklist import get_acquisition_tax_checklist
 from building_property_tax import calc_building_property_tax
-from corporate_tax import calc_corporate_property_sale_tax, judge_corporate_non_business_land
+from corporate_tax import (calc_corporate_acquisition_tax, calc_corporate_jongbu_tax,
+                           calc_corporate_property_sale_tax, judge_corporate_non_business_land)
+from tax_scope import get_tax_scope
 from hosted_descriptions import DESCRIPTIONS
 from policy_pages import CONTACT, PRIVACY_HTML, SUPPORT_NAME, TERMS_HTML
 from usage_log import UsageLogMiddleware
@@ -60,13 +62,20 @@ def make_server():
         "Do not ask for items whose condition does not apply."
     )
     instructions += (
-        " For a company (법인) selling real estate, calc_corporate_property_sale_tax returns corporate tax on the taxable base, "
-        "the additional tax on gains from housing, non-business land and housing rights (법인세법 §55의2) and local corporate income tax. "
-        "It does not compute the taxable base itself. judge_corporate_non_business_land judges whether land sold by a company is "
-        "non-business land (법인세법 §55의2②) and returns nothing when facts are missing. "
+        " Before answering a question that spans several taxes, or any question about a company (법인) owner, call get_tax_scope "
+        "(owner=\"법인\" for companies): it lists which tool computes each tax, what no tool covers, and for a company the "
+        "acquire-hold-sell sequence with commonly missed taxes. "
+        "For a company, do not use calc_jongbu_tax, calc_acquisition_tax or calc_transfer_tax: use calc_corporate_jongbu_tax "
+        "(housing owned on June 1: flat 2.7%/5%, no deduction, no burden cap — 종합부동산세법 §9②), "
+        "calc_corporate_acquisition_tax (12% on housing with the low-price exception, and the large-city surcharge 지방세법 §13②) "
+        "and calc_corporate_property_sale_tax (corporate tax on the taxable base, the additional tax on gains from housing, "
+        "non-business land and housing rights under 법인세법 §55의2, and local corporate income tax; it does not compute the taxable base itself). "
+        "judge_corporate_non_business_land judges whether land sold by a company is non-business land (법인세법 §55의2②) "
+        "and returns no verdict when facts are missing. "
         "calc_building_property_tax computes property tax on non-residential buildings (상가·공장 등, 지방세법 §111①2호). "
-        "주민세, 부가가치세, 배당 과세 and other corporate matters are not covered by any tool here: "
-        "say so instead of quoting rates or article numbers from memory. "
+        "A company that holds property on June 1 owes that year's property tax and holding tax even if it sells soon after. "
+        "For anything get_tax_scope lists as not covered (주민세, 부가가치세, 배당 과세 and so on), say this server does not cover it "
+        "and give no rates, amounts or article numbers from memory. "
         "Cite only statute articles that a tool result returned."
     )
     server = FastMCP(
@@ -99,6 +108,12 @@ def make_server():
         annotations=ToolAnnotations(title="Corporate non-business land test (법인 비사업용 토지)", readOnlyHint=True,
                                     destructiveHint=False, idempotentHint=True, openWorldHint=False),
     )
+    # 법인 종부세·법인 취득세 — 생성 도구(calc_jongbu_tax, calc_acquisition_tax)로는 법인을 계산할 수 없다(findings 95·97·98).
+    for fn, title in ((calc_corporate_jongbu_tax, "Corporate holding tax on housing (법인 종부세)"),
+                      (calc_corporate_acquisition_tax, "Corporate acquisition tax (법인 취득세)"),
+                      (get_tax_scope, "Tax scope and tool map (범위 안내)")):
+        server.add_tool(fn, title=title, annotations=ToolAnnotations(
+            title=title, readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
     # 건축물(상가·공장 등) 재산세 — 조문 노드(tax_nodes/jaesan_geonchuk.py)로 계산한다.
     server.add_tool(
         calc_building_property_tax,

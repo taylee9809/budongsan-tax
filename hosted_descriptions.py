@@ -68,6 +68,8 @@ Returns:
 
     "calc_acquisition_tax": """Korea acquisition tax (취득세) on real estate plus local education tax and rural special tax, by year and acquisition type.
 
+법인 명의 취득에는 맞지 않는다: heavy_type="법인"은 주택 외 물건에도 12%를 내고(§13의2는 주택만), 대도시 법인 중과(지방세법 §13②)의 지방교육세를 계산하지 못한다. 법인은 법인 전용 취득세 계산을 쓴다.
+
 취득세와 지방교육세·농어촌특별세를 계산한다. 세율은 year와 취득 유형으로 상수표에서 읽고, 부가세목 두 개의 산식(세율 치환 재계산)도 코드가 수행한다.
 
 Args:
