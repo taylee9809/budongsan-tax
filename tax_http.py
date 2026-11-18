@@ -44,7 +44,7 @@ def make_server():
     # Directory review: descriptions say what a tool does, never which tool to call next.
     enabled = [t.model_copy(update={"description": DESCRIPTIONS[t.name]}) if t.name in DESCRIPTIONS else t
                for t in enabled]
-    # 결함이 있는 생성 도구(findings 88·95·97·98)는 같은 이름의 고친 판으로 대체한다 — 목록은 tax_overrides.OVERRIDES.
+    # 결함이 있는 생성 도구(findings 88·95·97·98·120)는 같은 이름의 고친 판으로 대체한다 — 목록은 tax_overrides.OVERRIDES.
     enabled = tax_overrides.replace_tools(enabled, DESCRIPTIONS)
     instructions = tax_server.SERVER_INSTRUCTIONS + (
         " Ask for missing material facts, including transaction date, household home count, "

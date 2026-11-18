@@ -37,9 +37,13 @@ CASES = [
                                 "land_permit_target": True}),
     ("count_heavy_homes", {"items": [{"라벨": "A", "기준시가": 900000000}, {"라벨": "B", "기준시가": 80000000}],
                            "heavy_tier": 2, "sale_label": "B", "sale_date": "2026-10-01", "adjusted_at_sale": True}),
+    ("judge_temporary_two_homes", {"prev_acquired": "2020-03-01", "new_acquired": "2024-05-01",
+                                   "prev_sale_date": "2026-03-01", "other_homes_at_acquisition": 1}),
+    ("judge_family_loan", {"loan_amount": 200000000, "agreed_interest_rate": 0.02, "loan_date": "2014-01-01"}),
 ]
 # 대체 도구 결과에 있어야 하는 것 — (CASES 순번, 구조화 결과의 키, 기대값)
-OVERRIDE_EXPECT = [(8, "과세표준", 360000000), (9, "계산불가", True), (10, "계산불가", True), (11, "중과여부", True)]
+OVERRIDE_EXPECT = [(8, "과세표준", 360000000), (9, "계산불가", True), (10, "계산불가", True), (11, "중과여부", True),
+                   (13, "특례충족", False), (14, "적용이자율", 0.069)]
 
 
 async def check(port):

@@ -14,9 +14,11 @@ SOURCE = {t.name: t for t in tax_server.mcp._tool_manager.list_tools()}
 _EMPTY = inspect.Parameter.empty
 
 
+FIXED = {"calc_jongbu_tax", "calc_acquisition_tax", "judge_transfer_reliefs", "count_heavy_homes"}
+
+
 def test_overrides_name_generated_tools():
-    assert set(tax_overrides.OVERRIDES) == {"calc_jongbu_tax", "calc_acquisition_tax", "judge_transfer_reliefs",
-                                            "count_heavy_homes"}
+    assert set(tax_overrides.OVERRIDES) == FIXED | set(tax_overrides.PASSTHROUGH) and len(tax_overrides.OVERRIDES) == 16
     assert set(tax_overrides.OVERRIDES) <= set(SOURCE)
     assert all(fn.__name__ == name for name, fn in tax_overrides.OVERRIDES.items())
 
@@ -38,10 +40,69 @@ def test_override_parameters_are_a_superset(name):
 
 
 def test_passthrough_overrides_cover_the_judgment_signature():
-    """판정기를 그대로 부르는 대체 도구는 판정기 인자를 빠짐없이 받는다 — 판정기에 인자가 늘면 깨진다."""
+    """판정기를 그대로 부르는 대체 도구는 판정기 인자를 빠짐없이 받는다 — 판정기에 인자가 늘면 따라간다."""
     judged = inspect.signature(tax_judgment.judge_transfer_reliefs).parameters
     assert set(judged) <= set(inspect.signature(tax_overrides.judge_transfer_reliefs).parameters)
     assert list(inspect.signature(tax_judgment.count_heavy_homes).parameters) == ["items", "heavy_tier"]
+    for name in tax_overrides.PASSTHROUGH:
+        assert (list(inspect.signature(tax_overrides.OVERRIDES[name]).parameters)
+                == list(inspect.signature(getattr(tax_judgment, name)).parameters)), name
+
+
+def test_no_generated_wrapper_drops_judgment_arguments_unnoticed():
+    """생성 서버 래퍼가 판정기 인자를 떨어뜨리면 그 도구는 대체 목록에 있어야 한다(findings 120)."""
+    import re
+    dropping = set()
+    for name, tool in SOURCE.items():
+        for called in set(re.findall(r"_tj\.([A-Za-z_0-9]+)\(", inspect.getsource(tool.fn))):
+            judged = inspect.signature(getattr(tax_judgment, called)).parameters
+            mine = inspect.signature(tool.fn).parameters
+            if any(p not in mine and spec.kind is spec.POSITIONAL_OR_KEYWORD for p, spec in judged.items()):
+                dropping.add(name)
+    assert dropping <= set(tax_overrides.OVERRIDES), dropping - set(tax_overrides.OVERRIDES)
+    assert set(tax_overrides.PASSTHROUGH) <= dropping          # 생성기가 따라잡으면 목록에서 뺀다
+
+
+def test_passthrough_descriptions_document_the_added_arguments():
+    from hosted_descriptions import ADDED_ARGUMENTS
+    assert set(ADDED_ARGUMENTS) == set(tax_overrides.PASSTHROUGH)
+    tools = {t.name: t for t in tax_http.make_server()._tool_manager.list_tools()}
+    for name in tax_overrides.PASSTHROUGH:
+        old = inspect.signature(SOURCE[name].fn).parameters
+        added = [p for p in inspect.signature(tax_overrides.OVERRIDES[name]).parameters if p not in old]
+        assert added and all(p in ADDED_ARGUMENTS[name] for p in added), name
+        assert ADDED_ARGUMENTS[name] in tools[name].description
+        assert set(added) <= set(tools[name].parameters["properties"])
+        assert not set(added) & set(tools[name].parameters.get("required", []))
+
+
+def test_passthrough_matches_the_wrapper_when_new_arguments_are_omitted():
+    cases = {
+        "judge_family_loan": dict(loan_amount=200_000_000, agreed_interest_rate=0.02),
+        "judge_temporary_two_homes": dict(prev_acquired="2020-03-01", new_acquired="2024-05-01", prev_sale_date="2026-03-01"),
+        "judge_inherited_house_priority": dict(houses=[
+            {"라벨": "가", "피상속인_소유기간_년": 20, "피상속인_거주기간_년": 5, "상속개시당시_거주": False, "기준시가": 300_000_000},
+            {"라벨": "나", "피상속인_소유기간_년": 10, "피상속인_거주기간_년": 10, "상속개시당시_거주": True, "기준시가": 500_000_000}]),
+        "judge_co_inherited_owner": dict(shares=[{"상속인": "갑", "지분율": 0.5, "해당주택_거주": True, "나이": 50},
+                                                 {"상속인": "을", "지분율": 0.5, "해당주택_거주": False, "나이": 55}]),
+    }
+    for name, kw in cases.items():
+        assert tax_overrides.OVERRIDES[name](**kw) == getattr(tax_server, name)(**kw), name
+        assert tax_overrides.OVERRIDES[name](*kw.values()) == getattr(tax_server, name)(*kw.values()), name   # 위치 인자
+
+
+def test_passthrough_new_arguments_change_the_verdict():
+    two = dict(prev_acquired="2020-03-01", new_acquired="2024-05-01", prev_sale_date="2026-03-01")
+    base = tax_overrides.judge_temporary_two_homes(**two)
+    more = tax_overrides.judge_temporary_two_homes(**two, other_homes_at_acquisition=1)
+    assert more == tax_judgment.judge_temporary_two_homes(**two, other_homes_at_acquisition=1) and more != base
+    loan = tax_overrides.judge_family_loan(200_000_000, 0.02, loan_date="2014-01-01")
+    assert loan == tax_judgment.judge_family_loan(200_000_000, 0.02, loan_date="2014-01-01")
+    assert loan != tax_overrides.judge_family_loan(200_000_000, 0.02)
+    houses = [{"라벨": "가", "피상속인_소유기간_년": 20, "피상속인_거주기간_년": 5, "상속개시당시_거주": False, "기준시가": 300_000_000},
+              {"라벨": "나", "피상속인_소유기간_년": 10, "피상속인_거주기간_년": 10, "상속개시당시_거주": True, "기준시가": 500_000_000}]
+    assert (tax_overrides.judge_inherited_house_priority(houses, demolished_label="가")
+            == tax_judgment.judge_inherited_house_priority(houses, demolished_label="가"))
 
 
 def test_hosted_server_serves_the_overrides():

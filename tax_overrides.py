@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """생성 서버(tax_server.py) 도구의 고친 판 — 같은 이름으로 대체한다.
 
-tax_server.py 는 비공개 생성기가 만드는 파일이라 이 저장소에서 손으로 고치지 않는다. 그 안의 도구 넷에 결함이 있다
-(data/verification/findings.jsonl 88·95·97·98). 여기의 함수는 이름과 기존 인자를 그대로 두고 필요한 인자만 더한
+tax_server.py 는 비공개 생성기가 만드는 파일이라 이 저장소에서 손으로 고치지 않는다. 그 안의 도구에 결함이 있다
+(data/verification/findings.jsonl 88·95·97·98·120). 여기의 함수는 이름과 기존 인자를 그대로 두고 필요한 인자만 더한
 판이다. 계산은 새로 짜지 않는다 — tax_server 의 원래 함수, 판정기(tax_judgment), 조문 노드(tax_nodes)를 부르고
 결함이 있는 입구만 바로잡는다.
 
@@ -11,6 +11,7 @@ tax_server.py 는 비공개 생성기가 만드는 파일이라 이 저장소에
                          가산세율을 직접 넘긴 호출에는 지방교육세 경고를 붙인다(금액은 그대로).
   judge_transfer_reliefs 판정기가 받는 한시 배제 나목 인자(토지거래허가·6개월 지역·소재지)를 넘긴다.
   count_heavy_homes      양도 주택을 지정하면 주택 목록으로 중과 대상·가산세율까지 본다(조문 노드 중과세율_판정).
+  PASSTHROUGH 12개       판정기에 더해진 선택 인자를 래퍼가 넘기지 못하던 도구(findings 120) — 판정기 인자를 모두 받는다.
 
 대체 목록은 OVERRIDES 한 곳이다. 호스팅 서버(tax_http.make_server), stdio 진입점(tax_full), 케이스 실행기
 (scripts/verify_tool_cases.py)가 이 표를 읽는다. 대체 도구의 인자가 원래 도구 인자의 상위집합인지는
@@ -273,21 +274,69 @@ def count_heavy_homes(
     return r
 
 
+# ─────────────────────────────────────── 판정기의 선택 인자를 떨어뜨리는 래퍼(findings 120)
+#: 생성 서버 래퍼가 판정기(tax_judgment)를 그대로 부르면서 판정기에 뒤에 더해진 선택 인자를 넘기지 못하는 도구.
+#: 대체 도구는 래퍼의 기존 인자(이름·순서·기본값)에 판정기의 나머지 인자를 붙여 그대로 판정기를 부른다.
+#: 인자 설명은 hosted_descriptions.ADDED_ARGUMENTS.
+PASSTHROUGH = (
+    "judge_temporary_two_homes", "judge_155_special", "judge_inherited_house_priority", "judge_co_inherited_owner",
+    "judge_reconstruction_membership_transfer", "judge_business_dealer_status", "judge_farmland_reduction",
+    "judge_farmland_daeto", "judge_second_home_exclusion", "judge_first_home_acquisition_relief",
+    "judge_family_loan", "format_consultation_report",
+)
+
+
+def _passthrough(name: str):
+    """래퍼 인자 + 판정기에만 있는 인자를 받는 함수를 만든다. 래퍼가 판정기 인자와 어긋나면 여기서 멈춘다."""
+    import inspect
+    wrapper, judge = getattr(_ts, name), getattr(_tj, name)
+    old, full = inspect.signature(wrapper).parameters, inspect.signature(judge).parameters
+    if list(full)[:len(old)] != list(old):
+        raise RuntimeError("%s: 생성 서버 래퍼의 인자가 판정기 인자의 앞부분과 다르다 — 대체 도구를 다시 맞춰야 한다" % name)
+    extra = [full[p] for p in list(full)[len(old):]]
+    if any(p.default is inspect.Parameter.empty or p.kind is not inspect.Parameter.POSITIONAL_OR_KEYWORD for p in extra):
+        raise RuntimeError("%s: 판정기에 더해진 인자에 기본값이 없다" % name)
+
+    def tool(*args, **kwargs):
+        bound = signature.bind(*args, **kwargs)
+        bound.apply_defaults()          # 래퍼의 기본값을 그대로 넘긴다(판정기 기본값과 달라져도 종전 호출과 같게)
+        return judge(**bound.arguments)
+
+    signature = inspect.Signature(list(old.values()) + extra, return_annotation=inspect.signature(wrapper).return_annotation)
+    tool.__signature__ = signature
+    tool.__name__ = tool.__qualname__ = name
+    tool.__doc__ = judge.__doc__
+    tool.__annotations__ = {p.name: p.annotation for p in signature.parameters.values()}
+    tool.__annotations__["return"] = signature.return_annotation
+    tool.__module__ = __name__
+    return tool
+
+
 #: 대체 도구 — 이름 → 고친 판 함수. 이름은 생성 서버 도구 이름과 같아야 한다.
 OVERRIDES = {f.__name__: f for f in (calc_jongbu_tax, calc_acquisition_tax, judge_transfer_reliefs, count_heavy_homes)}
+OVERRIDES.update({name: _passthrough(name) for name in PASSTHROUGH})
+globals().update({name: OVERRIDES[name] for name in PASSTHROUGH})      # tax_overrides.judge_family_loan(...) 처럼 부를 수 있게
 
 
 def replace_tools(source_tools: list, descriptions: dict | None = None) -> list:
     """생성 서버 도구 목록에서 OVERRIDES 에 있는 이름을 고친 판으로 바꾼 목록(순서 유지).
 
     제목·annotations 는 원래 도구 것을 물려받고, 설명은 descriptions[name](없으면 원래 도구의 설명)을 쓴다.
+    PASSTHROUGH 도구 가운데 descriptions 에 없는 것은 원래 설명 뒤에 hosted_descriptions.ADDED_ARGUMENTS 를 붙인다.
     목록에 없는 이름은 더하지 않는다 — 도구 수는 그대로다.
     """
     from mcp.server.fastmcp.tools import Tool
+    from hosted_descriptions import ADDED_ARGUMENTS
     out = []
     for t in source_tools:
         fn = OVERRIDES.get(t.name)
-        out.append(t if fn is None else Tool.from_function(
-            fn, name=t.name, title=t.title, annotations=t.annotations,
-            description=(descriptions or {}).get(t.name) or t.description))
+        if fn is None:
+            out.append(t)
+            continue
+        text = (descriptions or {}).get(t.name)
+        if not text:
+            text = t.description
+            if t.name in ADDED_ARGUMENTS and ADDED_ARGUMENTS[t.name] not in text:
+                text = text.rstrip() + "\n\n" + ADDED_ARGUMENTS[t.name]
+        out.append(Tool.from_function(fn, name=t.name, title=t.title, annotations=t.annotations, description=text))
     return out
