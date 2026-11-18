@@ -1119,7 +1119,8 @@ def judge_155_special(kind: str, event_date: str = "", sale_date: str = "",
                       parent_is_female: bool = False,
                       merged_for_parent_care: bool = False,
                       held_before_merge: bool = True,
-                      designated_by_agreement: bool = False) -> dict:
+                      designated_by_agreement: bool = False,
+                      homes_at_sale: int | None = None) -> dict:
     """§155 특례 판정 디스패처 (kind: 혼인|동거봉양|상속주택|거주주택).
 
     - 혼인(§155⑤): 각 1주택끼리 혼인 → 혼인일부터 10년(2024-11-12 전 양도분은 5년) 내
@@ -1135,9 +1136,23 @@ def judge_155_special(kind: str, event_date: str = "", sale_date: str = "",
     과거 양도분 상담·경정청구에서는 sale_date를 반드시 넣을 것.
     excluded_homes_*: 다른 특례로 주택수에서 빠지는 주택 수(공동상속 §155③·농어촌 조특법 §99의4 등)
       — 1+1 판정 전에 차감한다(서면-2021-부동산-7265).
+    homes_mine·homes_spouse_or_parent 는 혼인·합가 '당시' 각자의 주택수다(요건 판정 기준 — 영 §155④·⑤ "…함으로써 1세대가
+      2주택을 보유하게 되는 경우", 법규과-1599(2024.6.25.)). homes_at_sale 은 양도일 현재 세대의 주택수(선택) — 1+1 요건
+      판정에는 쓰지 않고, 합가 뒤 주택수가 달라진 경우의 안내에만 쓴다. 넣지 않으면 종전과 같다.
     """
     flags, citations = [], []
     s = date.fromisoformat(sale_date) if sale_date else None
+    at_sale_flag = None
+    if homes_at_sale is not None and kind in ("혼인", "동거봉양"):
+        n = int(homes_at_sale)
+        if n > 2:
+            at_sale_flag = (f"양도일 현재 세대 주택수 {n} — 합가 뒤 늘어난 주택이 있으면 이 특례만으로는 1세대1주택으로 볼 수 없다. "
+                            "일시적 2주택(§155①)·상속주택(§155②) 등 다른 특례 요건을 따로 판정할 것(중첩은 2개까지)")
+        elif n < 2:
+            at_sale_flag = (f"양도일 현재 세대 주택수 {n} — 합가 뒤 다른 주택을 이미 처분했다면 남은 1주택은 "
+                            "이 특례가 아니라 §154① 1세대1주택 요건으로 판정한다")
+        else:
+            at_sale_flag = "양도일 현재 세대 주택수 2 — 요건 판정은 합가 당시 주택수(homes_mine·homes_spouse_or_parent)로 한다"
     mine = max(homes_mine - excluded_homes_mine, 0)
     theirs = max(homes_spouse_or_parent - excluded_homes_spouse_or_parent, 0)
     if excluded_homes_mine or excluded_homes_spouse_or_parent:
@@ -1150,7 +1165,9 @@ def judge_155_special(kind: str, event_date: str = "", sale_date: str = "",
             return {"특례적용": False, "사유": f"1주택+1주택 결합만 가능 — {mine}+{theirs}는 탈락 (사례⑩: 2+1 불가)",
                     "근거": citations + [_cite("혼인 합가 특례는 각 1주택 한정 — 임대주택도 주택수에 든다"
                                              "(서면-2024-부동산-2331)", "영 §155⑤ 문언", "A")],
-                    "플래그": ["주택수는 혼인합가 당시 기준으로 판정한다(양도일 현재가 아님)"]}
+                    "플래그": ["주택수는 혼인합가 당시 기준으로 판정한다(양도일 현재가 아님)"]
+                           + ([f"양도일 현재 세대 주택수 {int(homes_at_sale)} — 합가 뒤 처분해 주택수가 줄었어도 혼인 당시 "
+                               f"{mine}+{theirs} 이면 대상이 아니다(법규과-1599, 2024.6.25.)"] if homes_at_sale is not None else [])}
         years, basis = _r155_period("혼인", s)
         dl = _add_years(date.fromisoformat(event_date), years)
         ok = (s <= dl) if s else None
@@ -1161,8 +1178,12 @@ def judge_155_special(kind: str, event_date: str = "", sale_date: str = "",
         flags.append("§155 특례 규정의 3중첩은 불허(서면-2022-법규재산-4283) — 2중첩(혼인+일시적2주택, "
                      "혼인+상속)까지만")
         flags.append("세목 분기: 종부세는 세대 자체 10년 분리(종부령 §1의2④), 취득세 완충은 혼전 분양권 케이스만")
-        return {"특례적용": ok if sale_date else True, "특례기간연수": years,
-                "데드라인": dl.isoformat(), "근거": citations, "플래그": flags}
+        out = {"특례적용": ok if sale_date else True, "특례기간연수": years,
+               "데드라인": dl.isoformat(), "근거": citations, "플래그": flags}
+        if at_sale_flag:
+            flags.append(at_sale_flag)
+            out["주택수_판정기준"] = {"합가당시": f"{mine}+{theirs}", "양도일현재": int(homes_at_sale)}
+        return out
 
     if kind == "동거봉양":
         merged = date.fromisoformat(event_date) if event_date else None
@@ -1189,9 +1210,13 @@ def judge_155_special(kind: str, event_date: str = "", sale_date: str = "",
                          "없어 일반적 적용례(부칙 §2, 시행일이 속하는 과세기간 소득분)로 2018년 양도분 전체에 "
                          "10년을 적용할 여지가 있다. 회색지대 — 전문가 확인 필요(등급 c)")
         flags.append("종부세 동거봉양은 세대 분리 간주 10년(종부령 §1의2⑤ — 60세 도달 규칙 별도)·상속공제 동거주택 판정에도 합가 예외 있음(상증령 §20의2①6호)")
-        return {"특례적용": ok if sale_date else True, "특례기간연수": years,
-                "회색지대": bool(s and date(2018, 1, 1) <= s < _R155_CARE_10Y),
-                "데드라인": dl.isoformat(), "근거": citations, "플래그": flags}
+        out = {"특례적용": ok if sale_date else True, "특례기간연수": years,
+               "회색지대": bool(s and date(2018, 1, 1) <= s < _R155_CARE_10Y),
+               "데드라인": dl.isoformat(), "근거": citations, "플래그": flags}
+        if at_sale_flag:
+            flags.append(at_sale_flag)
+            out["주택수_판정기준"] = {"합가당시": f"{mine}+{theirs}", "양도일현재": int(homes_at_sale)}
+        return out
 
     if kind == "상속주택":
         same_household_ok = separate_household_at_inheritance or (merged_for_parent_care and held_before_merge)
