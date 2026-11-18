@@ -235,11 +235,19 @@ def count_acquisition_homes(items: list[dict], acquire_date: str | None = None, 
 
 def judge_acq_temporary_two_homes(new_acquire_date: str, prev_disposal_date: str | None,
                                   prev_disposal_kind: str = "매각",
-                                  disposal_to_same_household: bool = False) -> dict:
+                                  disposal_to_same_household: bool = False,
+                                  prev_in_adjusted_area: bool | None = None,
+                                  new_in_adjusted_area: bool | None = None,
+                                  new_contract_date: str | None = None,
+                                  new_deposit_paid_date: str | None = None) -> dict:
     """취득세 일시적 2주택 판정 (영 §28의5).
 
     양도세 §155①과 별개다 — 1년 경과 요건이 없고, 종전 '주택등'에 입주권·분양권·오피스텔이
-    포함되며, 기간은 3년이다.
+    포함된다. 기간은 실행 노드(tax_nodes.chwideuk_saryeo.일시적2주택_기간)에만 있다:
+    신규 주택 취득일이 2026-10-01 이후면 3년, 종전 주택등과 신규 주택이 모두 조정대상지역이면 2년
+    (대통령령 제36736호, 부칙 §2② — 2026-08-26 이전 계약·계약금 지급분은 종전 규정 3년). 그 전 취득분은 3년.
+    prev_in_adjusted_area·new_in_adjusted_area 를 모르면(None) 2026-10-01 이후 취득분은 2년 안 처분만 해당으로
+    확정하고, 2년~3년 사이 처분은 판정을 보류한다(일시적2주택 None).
     '처분'은 취득에 대비되는 개념 — 매각·증여 등으로 **타인에게 새로운 취득이 발생**하거나
     멸실로 지배권을 상실하는 것. 상속으로 소유권을 잃은 것도 처분이고(조심 2025지1039),
     **동일 세대원에게 이전한 것은 세대 주택수가 그대로여서 처분이 아니다**
@@ -247,30 +255,49 @@ def judge_acq_temporary_two_homes(new_acquire_date: str, prev_disposal_date: str
     취득 사유(이사·학업·취업·직장이전)는 예시일 뿐이고 신규주택 실거주·전입은 요건이 아니다
     (부동산세제과-3728).
     """
+    from tax_nodes.chwideuk_saryeo import 일시적2주택_기간
     n = date.fromisoformat(new_acquire_date)
-    deadline = _add_years(n, 3)
-    cites = [_cite(f"신규 취득 {new_acquire_date} + 3년 = {deadline.isoformat()} 내 종전 주택등 처분",
-                   "영 §28의5① (양도세 §155①과 달리 1년 경과 요건 없음)", "A")]
+    s = date.fromisoformat(prev_disposal_date) if prev_disposal_date else None
+    years, years_long, why = 일시적2주택_기간(
+        n, s or n, prev_in_adjusted_area, new_in_adjusted_area,
+        date.fromisoformat(new_contract_date) if new_contract_date else None,
+        date.fromisoformat(new_deposit_paid_date) if new_deposit_paid_date else None)
+    deadline, deadline_long = _add_years(n, years), _add_years(n, years_long)
+    unsure = years != years_long
+    cites = [_cite(f"신규 취득 {new_acquire_date} + {years}년 = {deadline.isoformat()} 내 종전 주택등 처분"
+                   + (f" (종전·신규가 모두 조정대상지역이 아니면 3년 = {deadline_long.isoformat()})" if unsure else ""),
+                   "영 §28의5① (양도세 §155①과 달리 1년 경과 요건 없음) — " + why, "A")]
     flags = ["취득 사유는 예시 — 임대목적 취득도 가능하고 신규주택 전입은 요건이 아니다"
              "(부동산세제과-3728)"]
+    if unsure:
+        flags.append("2026-10-01 이후 취득 — 종전 주택등과 신규 주택이 모두 조정대상지역이면 처분기한이 2년이다"
+                     "(영 §28의5① 2026-09-30 개정). 두 주택의 조정대상지역 여부 확인 필요")
+    extra = {"처분데드라인_조정대상지역아님": deadline_long.isoformat()} if unsure else {}
     if not prev_disposal_date:
-        return {"일시적2주택": None, "처분데드라인": deadline.isoformat(),
-                "근거": cites, "플래그": flags + ["종전 주택등 처분(예정)일 미입력 — 판정 보류"]}
+        return dict({"일시적2주택": None, "처분데드라인": deadline.isoformat(),
+                     "근거": cites, "플래그": flags + ["종전 주택등 처분(예정)일 미입력 — 판정 보류"]}, **extra)
 
     if disposal_to_same_household:
         cites.append(_cite("동일 세대원에게 이전 — 세대 주택수에 변화가 없어 '처분'이 아니다",
                            "행안부 2026-01-23 · 부동산세제과-1190", "A"))
-        return {"일시적2주택": False, "처분데드라인": deadline.isoformat(),
-                "처분인정": False, "근거": cites, "플래그": flags}
+        return dict({"일시적2주택": False, "처분데드라인": deadline.isoformat(),
+                     "처분인정": False, "근거": cites, "플래그": flags}, **extra)
 
-    s = date.fromisoformat(prev_disposal_date)
+    if unsure and deadline < s <= deadline_long:
+        cites.append(_cite(
+            f"{prev_disposal_kind}로 {prev_disposal_date} 처분 — 2년 기한 {deadline.isoformat()} 경과, "
+            f"3년 기한 {deadline_long.isoformat()} 이내", "영 §28의5① (2026-09-30 개정)", "A"))
+        return dict({"일시적2주택": None, "처분데드라인": deadline.isoformat(), "처분인정": True, "근거": cites,
+                     "플래그": flags + ["처분일이 2년 기한과 3년 기한 사이 — 조정대상지역 여부를 알아야 판정(보류)"]}, **extra)
+    if unsure and s > deadline_long:
+        deadline = deadline_long
     in_time = s <= deadline
     cites.append(_cite(
         f"{prev_disposal_kind}로 {prev_disposal_date} 처분 — 데드라인 {deadline.isoformat()} "
         f"{'이내 충족' if in_time else '경과·미충족'}",
         "영 §28의5① · 상속도 처분에 해당(조심 2025지1039)", "A"))
-    return {"일시적2주택": in_time, "처분데드라인": deadline.isoformat(),
-            "처분인정": True, "근거": cites, "플래그": flags}
+    return dict({"일시적2주택": in_time, "처분데드라인": deadline.isoformat(),
+                 "처분인정": True, "근거": cites, "플래그": flags}, **extra)
 
 
 def judge_acquisition_rate(counted_homes_including_new: int, in_adjusted_area: bool,
@@ -369,7 +396,8 @@ def judge_acquisition_rate(counted_homes_including_new: int, in_adjusted_area: b
             "농특세율(과표대비)": 0.0 if (exclusive_area_m2 is not None and exclusive_area_m2 <= 85) else 0.002,
             "농특세비고": "전용 85㎡ 이하면 0",
             "근거": [_cite("일시적 2주택은 §13의2①2호 중과 대상에서 제외", "지방세법 §13의2①2호 괄호·영 §28의5", "A")],
-            "플래그": ["3년 내 종전 주택등 미처분 시 중과세율로 추징 — 사후관리 대상"],
+            "플래그": ["일시적 2주택 기간(3년 — 2026-10-01 이후 취득분으로 종전·신규 모두 조정대상지역이면 2년) 내 종전 주택등 미처분 시 "
+                    "중과세율 적용(2026-01-01 이후 기간 경과분은 §20② 60일 내 신고납부, 그 전은 구 §21①3호 추징) — 사후관리 대상"],
         }
     if is_corporation:
         rate, tier = 0.12, "법인 12% (§13의2①1호)"
@@ -418,8 +446,16 @@ def judge_acquisition_homes_and_rate(
         prev_disposal_date: str | None = None, prev_disposal_kind: str = "매각",
         disposal_to_same_household: bool = False, new_home_for_rental: bool = False,
         is_gift: bool = False, gift_std_value: int = 0,
-        gift_from_one_home_household_to_family: bool = False) -> dict:
+        gift_from_one_home_household_to_family: bool = False,
+        prev_home_in_adjusted_area: bool | None = None,
+        new_contract_date: str | None = None,
+        new_deposit_paid_date: str | None = None) -> dict:
     """취득세 주택수 산정 + 일시적 2주택 + 세율 판정 결합 (server.py 래퍼가 그대로 부른다).
+
+    prev_home_in_adjusted_area·new_contract_date·new_deposit_paid_date 는 2026-10-01 이후 취득분의 일시적 2주택
+    기간(영 §28의5① 2026-09-30 개정 — 종전·신규 모두 조정대상지역이면 2년, 부칙 §2② 2026-08-26 이전 계약분은 3년)에 쓴다.
+    신규 주택의 조정대상지역 여부는 in_adjusted_area 를 쓴다. 종전 주택 쪽을 모르면(None) 2년~3년 사이 처분은 보류된다.
+    (tax_server.py 래퍼는 아직 이 세 인자를 넘기지 않는다 — 생성기 재실행 필요.)
 
     acquire_date는 비수도권 저가주택 기준(1억↔2억)과 일시적 2주택 기산에 모두 쓰인다.
     이번에 취득하는 주택은 homes 원소의 "취득대상": true 또는 "라벨": "신규"로 가리킨다. 둘 다 없고
@@ -440,7 +476,8 @@ def judge_acquisition_homes_and_rate(
     temp = None
     if acquire_date and (prev_disposal_date or disposal_to_same_household):
         temp = judge_acq_temporary_two_homes(
-            acquire_date, prev_disposal_date, prev_disposal_kind, disposal_to_same_household)
+            acquire_date, prev_disposal_date, prev_disposal_kind, disposal_to_same_household,
+            prev_home_in_adjusted_area, bool(in_adjusted_area), new_contract_date, new_deposit_paid_date)
     rate = judge_acquisition_rate(
         counting["산입_주택수"], in_adjusted_area, is_corporation, exclusive_area_m2,
         is_gift, gift_std_value, gift_from_one_home_household_to_family,
@@ -1510,7 +1547,9 @@ def judge_jongbu_one_home_status(other_homes: list[dict], base_date: str = "") -
 
     other_homes 원소: {"유형": "부속토지"|"일시적신규"|"상속"|"지방저가"|"일반",
       "신규취득일": "YYYY-MM-DD" (일시적신규 — 과세기준일 현재 3년〔2023-02-28 전 성립분 2년〕
-        미경과 요건), "재건축완공": bool (구주택 재건축 준공은 신규취득 아님 — 조심 2025소4289),
+        미경과 요건. 2026-08-04 이후 취득분은 "종전_조정대상지역"·"신규_조정대상지역"(신규주택 취득일 현재, bool)이
+        모두 True면 2년 — 영 §4의2①1호(2026-09-30 개정). "신규계약일"·"신규계약금지급일"·"신규권리취득일"이
+        2026-08-03 이전이면 종전 3년(부칙 §2②), "조정대상지역_공고일" 이전 취득·계약도 3년), "재건축완공": bool (구주택 재건축 준공은 신규취득 아님 — 조심 2025소4289),
       "구주택취득일": "YYYY-MM-DD" (재건축완공 시 승계되는 취득일),
       "상속개시일": "YYYY-MM-DD", "지분율": 0~1, "지분공시가": 원, "수도권": bool,
       "공시가격": 원, "소재요건충족": bool (지방저가 — 비수도권 비광역시 등), "라벨": str}
@@ -1539,10 +1578,18 @@ def judge_jongbu_one_home_status(other_homes: list[dict], base_date: str = "") -
                 why = (f"재건축 준공주택은 멸실된 구주택과 별개 주택이 아니다 — 취득일은 {inherited} "
                        "승계라 '신규주택 취득' 자체가 성립하지 않음(조심 2025소4289)")
             elif bd and it.get("신규취득일"):
-                yrs = 3 if bd >= _JB_TEMP_3Y_FROM else 2
-                good = bd <= _add_years(date.fromisoformat(it["신규취득일"]), yrs)
+                # 기간은 실행 노드(tax_nodes.jongbu_setdae.일시적2주택_기간)에만 있다 — 2026-09-30 개정(조정대상지역 2년) 포함
+                from tax_nodes.jongbu_setdae import 일시적2주택_기간 as _jb_temp_years
+                acq = date.fromisoformat(it["신규취득일"])
+                yrs, yrs_why, unsure = _jb_temp_years(bd, it)
+                good = bd <= _add_years(acq, yrs)
                 why = (f"신규주택 취득 {yrs}년 {'미경과 — 간주' if good else '경과 — 탈락'} "
-                       f"(영 §4의2①{' — 2023-02-28 전 성립분은 2년' if yrs == 2 else ''})")
+                       f"(영 §4의2①{' — 2023-02-28 전 성립분은 2년' if bd < _JB_TEMP_3Y_FROM else ''})")
+                if bd >= _JB_TEMP_3Y_FROM and (yrs == 2 or yrs_why != "영 §4의2① — 3년"):
+                    why += " — " + yrs_why
+                if unsure and good and bd > _add_years(acq, 2):
+                    flags.append(f"{label}: 2026-08-04 이후 취득한 신규주택 — 신규주택 취득일 현재 종전주택·신규주택이 모두 조정대상지역이면 "
+                                 "기간이 2년(영 §4의2①1호)이라 탈락한다. 조정대상지역 여부(종전_조정대상지역·신규_조정대상지역) 확인 필요")
             else:
                 good, why = True, "일시적 2주택 — 과세기준일 현재 신규취득 3년 미경과 요건 확인 필요 (영 §4의2①)"
         elif t == "상속":
@@ -1571,7 +1618,7 @@ def judge_jongbu_one_home_status(other_homes: list[dict], base_date: str = "") -
     flags.append("전제: 주된 1주택은 세대원 중 1명 단독 소유(영 §2의3) — 부부 공동명의 1주택은 이 판정이 "
                  "아니라 법 §10의2 공동명의 1주택자 특례 신청(9/16~9/30) 사안(조심 2010서4078)")
     return {"1세대1주택자_간주": ok_all if other_homes else True, "항목별": details, "플래그": flags,
-            "근거": [_cite("간주 4유형: 부속토지·일시적 2주택 3년(2023-02-28 전 2년)·상속(5년/지분40%/6억·3억)·"
+            "근거": [_cite("간주 4유형: 부속토지·일시적 2주택 3년(2023-02-28 전 2년, 2026-08-04 이후 취득분으로 종전·신규 모두 조정대상지역이면 2년)·상속(5년/지분40%/6억·3억)·"
                          "지방저가 4억(2025-02-28 전 3억) — 2~4호는 2022년 성립분부터",
                          "종부세법 §8④(18977호 부칙 §2)·영 §4의2 연혁 실측", "A")]}
 
