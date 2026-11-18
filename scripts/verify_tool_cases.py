@@ -39,6 +39,11 @@ def _tools() -> dict:
         found.update({n: getattr(building_property_tax, n) for n in getattr(building_property_tax, "TOOLS", ())})
     except ImportError:
         pass
+    try:  # 증여 예시·추정 도구(상증법 §35·§44·§45)
+        import gift_presumption
+        found.update({n: getattr(gift_presumption, n) for n in getattr(gift_presumption, "TOOLS", ())})
+    except ImportError:
+        pass
     try:  # 생성 도구의 고친 판(호스팅 서버가 같은 이름으로 대체한다) — 판정기·생성 도구보다 우선
         import tax_overrides
         found.update(tax_overrides.OVERRIDES)
