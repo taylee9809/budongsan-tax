@@ -214,6 +214,9 @@ def judge_transfer_reliefs(
     land_permit_granted: bool = False,
     six_month_region: bool | None = None,
     location: str = "",
+    holdings: list[dict] | None = None,
+    sale_home: dict | None = None,
+    heavy_facts: dict | None = None,
 ) -> dict:
     """양도세 비과세·중과·장특공·고가주택 안분. 설명은 hosted_descriptions.DESCRIPTIONS["judge_transfer_reliefs"]."""
     return _tj.judge_transfer_reliefs(
@@ -221,7 +224,8 @@ def judge_transfer_reliefs(
         adjusted_at_sale, heavy_home_count, sale_date, meets_exemption_requirements,
         contract_date, deposit_received, contract_months_limit,
         land_permit_target=land_permit_target, land_permit_applied_date=land_permit_applied_date,
-        land_permit_granted=land_permit_granted, six_month_region=six_month_region, location=location)
+        land_permit_granted=land_permit_granted, six_month_region=six_month_region, location=location,
+        holdings=holdings, sale_home=sale_home, heavy_facts=heavy_facts)
 
 
 def count_heavy_homes(

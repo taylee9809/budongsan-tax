@@ -116,7 +116,11 @@ Args:
     location: 주택 소재지(예: "서울특별시 성동구") — 표 지역 여부를 가리는 데만 쓴다.
 
 Returns:
-    surcharge_rate, long_term_deduction_rate(양도세 계산의 입력값), 과세대상_양도차익_비율(1 미만이면 고가주택 안분), 근거 조문""",
+    surcharge_rate, long_term_deduction_rate(양도세 계산의 입력값), 과세대상_양도차익_비율(1 미만이면 고가주택 안분), 근거 조문
+
+    holdings: (선택) 양도일 현재 1세대가 가진 주택·조합원입주권·분양권 목록. 주면 heavy_home_count 대신 조문 노드가 중과 주택 수와 양도주택의 중과 제외 사유를 정한다. 양도주택은 항목에 "양도대상": true 로 표시한다.
+    sale_home: (선택) 양도주택 항목. 없으면 holdings 에서 "양도대상": true 인 항목.
+    heavy_facts: (선택) 혼인일·1주택 간주 특례 근거 등 중과 판정에 쓰는 그 밖의 사실.""",
 
     "judge_temporary_two_homes": """Temporary two-home exemption test: one-year gap, disposal deadline, move-in requirement (Income Tax Decree art. 155(1)).
 
