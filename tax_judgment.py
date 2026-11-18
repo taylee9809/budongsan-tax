@@ -1045,9 +1045,15 @@ _R155_ACQ_2Y = date(2018, 9, 14)   # 2018.9.13 이전 취득·계약 → 종전�
 _R155_ACQ_1Y = date(2019, 12, 17)  # 2019.12.16 이전 취득·계약 → 2년 규정
 
 
+_R155_2026_ACQ = date(2026, 8, 4)     # 영 36737호(2026-09-30) 부칙 §2① — 2026.8.4. 이후 신규 주택 취득분
+_R155_2026_EFF = date(2026, 10, 1)    # 같은 부칙 — 이 영 시행(2026.10.1.) 이후 종전의 주택을 양도하는 경우부터
+
+
 def _r155_regime(n: date, sale: date | None, prev_adj: bool, new_adj: bool,
                  new_contract: date | None,
-                 prev_adjusted_after_new_contract: bool = False) -> tuple[int, bool, str]:
+                 prev_adjusted_after_new_contract: bool = False,
+                 new_right: date | None = None,
+                 adjusted_notice: date | None = None) -> tuple[int, bool, str]:
     """(양도기한 연수, 전입요건 적용 여부, 적용법령 설명) — 조정→조정만 단축·전입요건 대상.
 
     prev_adjusted_after_new_contract: 종전주택이 신규주택 취득계약 체결 후에 비로소 조정대상
@@ -1060,6 +1066,22 @@ def _r155_regime(n: date, sale: date | None, prev_adj: bool, new_adj: bool,
                           "'취득 당시 둘 다 조정' 요건 미충족 → 3년 (서면-2020-부동산-3583, D급·예규 본문 확인 권장)")
     if not (prev_adj and new_adj):
         return 3, False, "영 §155① 본문 — 조정대상지역 상호 요건 미해당 → 3년"
+    if n >= _R155_2026_ACQ and (sale is None or sale >= _R155_2026_EFF):
+        # 영 §155①1호(2026.9.30. 개정, 대통령령 제36737호): 신규 주택 취득일 현재 종전의 주택이 조정대상지역에 있는 상태에서
+        # 조정대상지역에 있는 신규 주택을 취득 — 2년. 부칙 §2②: 2026.8.3. 이전 신규 주택(권리 포함) 취득·계약(계약금 지급)은 종전 규정.
+        cutoff = _R155_2026_ACQ - timedelta(days=1)
+        if new_right and new_right <= cutoff:
+            return 3, False, ("영 36737호 부칙 §2②1호 — 2026.8.3. 이전 신규 주택을 취득할 수 있는 권리 취득"
+                              f"({new_right.isoformat()}): 종전 규정 3년")
+        if new_contract and new_contract <= cutoff:
+            return 3, False, ("영 36737호 부칙 §2②2호 — 2026.8.3. 이전 신규 주택 매매계약 체결·계약금 지급"
+                              f"({new_contract.isoformat()}): 종전 규정 3년")
+        if adjusted_notice and ((new_contract and new_contract <= adjusted_notice)
+                                or (new_right and new_right <= adjusted_notice) or n <= adjusted_notice):
+            return 3, False, ("영 §155①1호 대괄호(2026.9.30. 개정) — 조정대상지역 공고일"
+                              f"({adjusted_notice.isoformat()}) 이전 신규 주택(권리 포함) 취득 또는 계약·계약금 지급: 2호 3년")
+        return 2, False, ("영 §155①1호(2026.9.30. 개정, 36737호 부칙 §2①) — 신규 주택 취득일 현재 종전·신규 모두 조정대상지역, "
+                          "2026.8.4. 이후 신규 취득·2026.10.1. 이후 양도: 2년(전입요건 없음)")
     if sale is None or sale >= _R155_REL_3Y:
         return 3, False, "영 §155①(2023.2.28 개정, 33267호 부칙 §8) — 2023.1.12 이후 양도분 3년 단일·전입요건 폐지"
     if sale >= _R155_REL_2Y:
@@ -1089,8 +1111,16 @@ def judge_temporary_two_homes(prev_acquired: str, new_acquired: str,
                               merge_kind: str | None = None,
                               merge_date: str | None = None,
                               other_homes_at_sale: int = 0,
-                              new_right_acquired: str | None = None) -> dict:
+                              new_right_acquired: str | None = None,
+                              adjusted_area_notice_date: str | None = None) -> dict:
     """§155① 일시적 2주택 특례 판정 (노드 §155 계열·사례③, 심판례 회귀셋 cases_155_1.json).
+
+    2026.9.30. 개정(대통령령 제36737호, 시행 2026.10.1.): 신규 주택 취득일 현재 종전의 주택과 신규 주택이 모두 조정대상지역
+    (prev_in_adjusted_area·new_in_adjusted_area)이고 신규 주택을 2026.8.4. 이후 취득해 2026.10.1. 이후 종전 주택을 양도하면
+    양도기한이 2년이다(§155①1호). 2026.8.3. 이전에 신규 주택(new_right_acquired — 취득할 수 있는 권리 포함)을 취득했거나
+    매매계약을 체결하고 계약금을 지급(new_contract_date — 계약금까지 지급한 날을 넣는다)했으면 종전 규정 3년(부칙 §2②).
+    adjusted_area_notice_date: 조정대상지역 공고일 — 그날 이전에 신규 주택(권리 포함)을 취득했거나 계약·계약금 지급이면
+    1호에서 빠져 3년(1호 대괄호).
 
     other_homes_at_acquisition: 신규주택 취득 당시 종전주택 외 추가 보유 주택수 — §155①은
     '1주택을 소유한 1세대가 신규주택을 취득해 일시적으로 2주택'이 된 경우 전제라, 취득 당시
@@ -1182,8 +1212,10 @@ def judge_temporary_two_homes(prev_acquired: str, new_acquired: str,
     years, needs_move_in, regime = _r155_regime(
         n, s, prev_in_adjusted_area, new_in_adjusted_area,
         date.fromisoformat(new_contract_date) if new_contract_date else None,
-        prev_adjusted_after_new_contract)
-    citations.append(_cite(regime, "영 §155① 및 부칙(29242·30395·32654·33267호)", "A"))
+        prev_adjusted_after_new_contract,
+        date.fromisoformat(new_right_acquired) if new_right_acquired else None,
+        date.fromisoformat(adjusted_area_notice_date) if adjusted_area_notice_date else None)
+    citations.append(_cite(regime, "영 §155① 및 부칙(29242·30395·32654·33267·36737호)", "A"))
 
     deadline = _add_years(n, years)
     cap2y = _add_years(n, 2)
@@ -1880,6 +1912,8 @@ def judge_exemption_requirements(
             if sangsaeng_ok:
                 citations.append(_cite("상생임대주택 — 직전임대 1년6개월↑+5%↓ 인상 계약(2021-12-20~2026-12-31 체결)+임대 2년↑ → 거주기간 제한 배제", "영 §155의3①", "B"))
                 flags.append("상생임대 특례적용신고서+계약서 2건 제출 요건(§155의3⑤) — 일몰 2026-12-31 감시")
+                flags.append("2026-10-01 이후 양도분은 양도기한이 있다 — 상생임대차 임대기간 종료일부터 1년과 2029-12-31 중 빠른 날"
+                             "(2026-12-31 이전 종료분은 2027-12-31)까지 양도(영 §155의3① 2026.9.30. 개정). 이 함수는 기한을 판정하지 않는다")
                 flags.append("상생임대 세부요건(직전임대차 성립·기간 합산·갱신 처리)은 이 함수가 판정하지 않는다 "
                              "— 예규 8건이 회귀셋 대기 중(다른 임차인 1년 이하 2계약 합산 불가, 4년 단일계약 "
                              "임의분할 불가, 2년→1년→2년 순차는 1·2차를 직전임대차로 봄 등)")
@@ -3065,11 +3099,15 @@ def judge_farmland_daeto(
     try:
         td = date.fromisoformat(transfer_date)
         nd = date.fromisoformat(new_acquire_date)
-        limit_days = (24 if is_expropriation else 12) * 30.44
+        # 수용 2년: 1호(양도 후 취득)는 종전부터, 2호(선취득 후 양도)는 2026.2.27. 개정(영 36127호) — 부칙 §13: 시행 이후 새 농지 취득분부터
+        from tax_nodes.yangdo_gammyeon import 대토_취득기한_개월
+        months = 대토_취득기한_개월(td, nd, is_expropriation)
+        limit_days = months * 30.44
         gap_days = abs((nd - td).days)
         if gap_days > limit_days:
             fails.append(f"양도일↔신규 취득일 간격 {gap_days // 30}개월 > "
-                         f"{'2년(수용)' if is_expropriation else '1년'} (영 §67③1·2호)")
+                         f"{'2년(수용)' if months == 24 else '1년'} (영 §67③1·2호"
+                         + (" — 새 농지를 2026.2.27. 전에 먼저 취득한 경우 수용이어도 1년, 영 36127호 부칙 §13)" if is_expropriation and months == 12 else ")"))
         if farming_start_date:
             fs = date.fromisoformat(farming_start_date)
             if (fs - nd).days > 366:
@@ -3194,10 +3232,14 @@ def judge_second_home_exclusion(
             fails.append(f"전용면적 {exclusive_area_m2}㎡ > 85㎡ (영 §98의8①1호)")
         elif exclusive_area_m2 is None:
             flags.append("전용면적 미입력 — 85㎡ 이하 요건 미검증")
-        if acquisition_price is not None and int(acquisition_price) > UNSOLD_HOUSE_PRICE_LIMIT:
-            fails.append(f"취득가액 {int(acquisition_price):,}원 > 7억원 (영 §98의8①2호)")
+        # 영 §98의8①2호: 6억 → 7억(2026.2.27. 개정, 영 36127호 부칙 §21 — 시행 이후 준공 후 미분양주택 취득분부터)
+        from tax_nodes.yangdo_teukrye import 준공후미분양_취득가액한도
+        price_cap = 준공후미분양_취득가액한도(acq)
+        if acquisition_price is not None and int(acquisition_price) > price_cap:
+            fails.append(f"취득가액 {int(acquisition_price):,}원 > {price_cap // 100_000_000}억원 (영 §98의8①2호"
+                         + (" — 2026.2.27. 전 취득분은 6억원, 영 36127호 부칙 §21)" if price_cap < UNSOLD_HOUSE_PRICE_LIMIT else ")"))
         elif acquisition_price is None:
-            flags.append("취득가액 미입력 — 7억 이하 요건 미검증")
+            flags.append(f"취득가액 미입력 — {price_cap // 100_000_000}억 이하 요건 미검증")
         if not first_contract:
             fails.append("양수자가 최초 매매(공급·분양)계약자가 아님 (영 §98의8①4호)")
         if not seller_is_supplier:
