@@ -3868,8 +3868,14 @@ def estimate_reconstruction_levy(
     one_home_holding_years: float | None = None,
     is_one_home_at_end: bool = False,
     age_at_end: int | None = None,
+    development_cost_items: dict | None = None,
 ) -> dict:
     """재건축부담금 추정 (재초환법 §7·8·10·12·14의2 — 노드 9종).
+
+    development_cost_items: 개발비용을 항목으로 주면 법 §11①·영 §9 노드(tax_nodes/jaegeonchuk_gaebalbiyong.py)가
+      산정해 development_cost 로 쓴다(development_cost 가 0일 때만). 키: 공사비·설계감리비·부대비용·그밖의경비(1호),
+      세금공과금(2호), 기부채납가액·기부채납_용적률완화(3호), 조합운영경비·임대주택건설비용(5호),
+      회계감사·증명서류(영 §9③), 적정성_미확인액(영 §9④). 주지 않으면 기존과 같다.
 
     end_price_total/start_price_total: 종료·개시시점 부과대상 주택 가격 총액.
     normal_rise_rate: 정상주택가격상승분 비율 = max(고시 정기예금이자율, 시군구 평균주택가격상승률)
@@ -3878,6 +3884,12 @@ def estimate_reconstruction_levy(
     반환값은 전부 **추정치**다 — 가액은 감정평가, 개발비용은 실적 정산으로 확정된다.
     """
     flags = []
+    cost_detail = None
+    if development_cost_items and not development_cost:
+        from tax_nodes.jaegeonchuk_gaebalbiyong import 개발비용_산정
+        _r = 개발비용_산정(**development_cost_items)
+        development_cost, cost_detail = int(_r["개발비용"]), _r["내역"]
+        flags.append("개발비용은 항목별 입력을 재초환법 §11① 각 호·영 §9③④로 산정한 값이다 — 호별 금액은 '개발비용_내역'")
     if management_plan_applied_date:
         try:
             if date.fromisoformat(management_plan_applied_date) <= date(2017, 12, 31):
@@ -3959,6 +3971,7 @@ def estimate_reconstruction_levy(
                  "별도 소스다 — 자동 조회 경로 미확보 (N재초령8-1)")
 
     return {
+        **({"개발비용_내역": cost_detail} if cost_detail is not None else {}),
         "부담금추정": max(0, base_levy - relief),
         "면제": base_levy == 0,
         "재건축초과이익": excess,

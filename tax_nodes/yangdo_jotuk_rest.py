@@ -920,7 +920,12 @@ def 영99의2(ctx):
             # 영 §99의2③1호 주민등록법상 1세대(tax_nodes.yangdo_gita_b, 2026-10-12 연결)
             판정 = ctx.값("조특99의2_1세대1주택_b", None)
             일주택 = bool(판정.get("해당")) if isinstance(판정, dict) else False
-        if not (일주택 or ctx.사실값("일시적2주택_요건", False)):
+        일시 = ctx.사실값("일시적2주택_요건")
+        if 일시 is None and not 일주택:
+            # 영 §99의2③2호 종전의 주택을 보유한 1세대(tax_nodes.yangdo_jotuk_ijeon, 2026-11-18 연결)
+            판정2 = ctx.값("조특99의2_일시적2주택", None)
+            일시 = bool(판정2.get("해당")) if isinstance(판정2, dict) else False
+        if not (일주택 or 일시):
             return 미적용("감면대상기존주택(1세대1주택 2년 보유·일시적 2주택) 요건 미충족(③)")
         return {"신축주택등정의_99의2": "감면대상기존주택"}
     if not ctx.사실값("신축주택등", False):
