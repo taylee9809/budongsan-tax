@@ -10,6 +10,7 @@ from mcp.types import ToolAnnotations
 
 from starlette.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 
+import tax_overrides
 import tax_server
 from acquisition_checklist import get_acquisition_tax_checklist
 from building_property_tax import calc_building_property_tax
@@ -43,6 +44,8 @@ def make_server():
     # Directory review: descriptions say what a tool does, never which tool to call next.
     enabled = [t.model_copy(update={"description": DESCRIPTIONS[t.name]}) if t.name in DESCRIPTIONS else t
                for t in enabled]
+    # 결함이 있는 생성 도구(findings 88·95·97·98)는 같은 이름의 고친 판으로 대체한다 — 목록은 tax_overrides.OVERRIDES.
+    enabled = tax_overrides.replace_tools(enabled, DESCRIPTIONS)
     instructions = tax_server.SERVER_INSTRUCTIONS + (
         " Ask for missing material facts, including transaction date, household home count, "
         "area and relief conditions; never treat omitted values as confirmed zero or false. "
@@ -108,7 +111,7 @@ def make_server():
         annotations=ToolAnnotations(title="Corporate non-business land test (법인 비사업용 토지)", readOnlyHint=True,
                                     destructiveHint=False, idempotentHint=True, openWorldHint=False),
     )
-    # 법인 종부세·법인 취득세 — 생성 도구(calc_jongbu_tax, calc_acquisition_tax)로는 법인을 계산할 수 없다(findings 95·97·98).
+    # 법인 종부세·법인 취득세 — 개인용 calc_jongbu_tax·calc_acquisition_tax 는 법인을 계산하지 않는다(findings 95·97·98).
     for fn, title in ((calc_corporate_jongbu_tax, "Corporate holding tax on housing (법인 종부세)"),
                       (calc_corporate_acquisition_tax, "Corporate acquisition tax (법인 취득세)"),
                       (get_tax_scope, "Tax scope and tool map (범위 안내)")):

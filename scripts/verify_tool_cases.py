@@ -2,7 +2,7 @@
 """도구 단위 검증 케이스 실행기 — data/verification/cases.jsonl 을 공개 도구에 그대로 넣어 기대값과 대조한다.
 
 케이스 한 줄은 CONTRIBUTING.md 1절 형식이다(tool · input_json · expected_key · expected_json).
-도구는 tax_judgment.py(판정기) → tax_server.py → 호스팅 전용 모듈 순으로 찾는다. 이 저장소에 없는
+도구는 tax_overrides.py(대체 도구) → tax_judgment.py(판정기) → tax_server.py → 호스팅 전용 모듈 순으로 찾는다. 이 저장소에 없는
 도구의 케이스는 '도구없음'으로 세고 실패로 치지 않는다 — 비공개 통합 서버 쪽 케이스가 섞여 있다.
 
 실행: py scripts/verify_tool_cases.py [--tool 이름] [--case AQ-23] [--strict]
@@ -37,6 +37,11 @@ def _tools() -> dict:
     try:
         import building_property_tax
         found.update({n: getattr(building_property_tax, n) for n in getattr(building_property_tax, "TOOLS", ())})
+    except ImportError:
+        pass
+    try:  # 생성 도구의 고친 판(호스팅 서버가 같은 이름으로 대체한다) — 판정기·생성 도구보다 우선
+        import tax_overrides
+        found.update(tax_overrides.OVERRIDES)
     except ImportError:
         pass
     return {k: v for k, v in found.items() if not inspect.iscoroutinefunction(v)}
