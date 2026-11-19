@@ -179,3 +179,37 @@ def test_whole_home_transfer_unchanged(가액, 비율):
     """전체 양도(면적 사실 없음)는 종전 그대로."""
     r = 양도세_부동산(가액, 가액 // 2, 0, 2026, 10, 10, 양도일="2026-06-01", **{"1세대1주택": True})
     assert r["고가주택 과세비율"] == 비율 and bool(r["비과세"]) is (비율 is None)
+
+
+# ------------------------------------------------------------------ 6. 주택부수토지 한도 — 법 §89①3호 본문 · 영 §154⑦
+_K6 = "부수토지 한도(법 §89①3호·영 §154⑦)"
+
+
+@pytest.mark.parametrize("도시, 수도권, 구역, 키", [
+    (True, True, "주거상업공업", "수도권_주거상업공업"), (True, True, "녹지", "수도권_녹지"),
+    (True, False, "주거상업공업", "수도권밖_도시"), (False, False, "주거상업공업", "도시지역밖")])
+def test_attached_land_node_matches_judgment_function(도시, 수도권, 구역, 키):
+    """조문 노드(영 §154⑦ + 법 §89①3호 본문)와 판정기 calc_attached_land_limit(도구)의 격자 대조."""
+    from tax_nodes.yangdo_busutoji import 부수토지_한도
+    for 정착, 토지 in itertools.product([40, 100, 133.3], [100, 300, 500, 1500]):
+        a = tax_judgment.calc_attached_land_limit(정착, 토지, 도시, 수도권, 구역)
+        b = 부수토지_한도(토지, "2026-06-01", 주택_정착면적=정착, 부수토지_용도지역=키)
+        assert (a["적용배율"], a["비과세_한도면적_m2"], a["초과면적_m2"], a["전부비과세"]) == (b["배율"], b["한도면적_㎡"], b["초과면적_㎡"], b["전부_주택부수토지"])
+    # 상속주택 멸실·신축 — 판정기의 demolished_inherited_footprint_m2 경로와 같은 한도
+    a = tax_judgment.calc_attached_land_limit(200, 500, 도시, 수도권, 구역, demolished_inherited_footprint_m2=80, sale_date="2026-06-01")
+    b = 부수토지_한도(500, "2026-06-01", 주택_정착면적=200, 상속주택_멸실후신축=True, 멸실주택_정착면적=80, 부수토지_용도지역=키)
+    assert (a["비과세_한도면적_m2"], a["초과면적_m2"]) == (b["한도면적_㎡"], b["초과면적_㎡"])
+
+
+def test_transfer_tax_without_land_area_unchanged():
+    """부수토지_면적을 주지 않는 호출은 그대로 — 판정 키가 없다. 한도 이내면 세액도 같다."""
+    기본 = dict(양도가액=1_500_000_000, 취득가액=600_000_000, 필요경비=0, 연도=2026, 보유연수=10, 거주연수=10, 양도일="2026-06-01")
+    a = 양도세_부동산(**기본, **{"1세대1주택": True})
+    assert _K6 not in a
+    b = 양도세_부동산(**기본, **{"1세대1주택": True}, 부수토지_면적=250, 주택_정착면적=100, 부수토지_용도지역="수도권_주거상업공업")
+    assert b[_K6]["전부_주택부수토지"] and {k: v for k, v in b.items() if k not in (_K6, "적용 조문")} == {k: v for k, v in a.items() if k != "적용 조문"}
+
+
+def test_attached_land_missing_zone_is_undetermined():
+    r = 양도세_부동산(1_000_000_000, 400_000_000, 0, 2026, 10, 10, 양도일="2026-06-01", **{"1세대1주택": True}, 부수토지_면적=500, 주택_정착면적=100)
+    assert "판정불가" in r[_K6] and r["총납부세액"] == 0
