@@ -16,13 +16,18 @@ _EMPTY = inspect.Parameter.empty
 
 
 def test_overrides_name_generated_tools():
-    # calc_jongbu_tax·calc_acquisition_tax 는 2026-11-18 원본(server.py)에서 고쳐 다시 생성했다 — 대체하지 않는다
-    assert set(tax_overrides.OVERRIDES) == {
+    # 2026-11-18 calc_jongbu_tax·calc_acquisition_tax, 2026-11-19 나머지 9개를 원본(server.py)에서 고쳐 다시 생성했다 — 대체 도구는 없다
+    assert tax_overrides.OVERRIDES == {}
+    assert set(tax_overrides.UPSTREAMED) == {
         "judge_transfer_reliefs", "count_heavy_homes", "judge_temporary_two_homes", "judge_155_special",
         "judge_156_3_from_portfolio", "calc_attached_land_limit", "judge_acquisition_homes_and_rate", "calc_property_tax",
         "estimate_reconstruction_levy"}
-    assert set(tax_overrides.OVERRIDES) <= set(SOURCE)
-    assert all(fn.__name__ == name for name, fn in tax_overrides.OVERRIDES.items())
+    assert set(tax_overrides.UPSTREAMED) <= set(SOURCE)
+    assert all(getattr(tax_overrides, name) is SOURCE[name].fn for name in tax_overrides.UPSTREAMED)
+
+
+#: 원본에 되돌려 반영한 도구 — 아래 테스트는 생성 도구가 그 인자를 계속 받는지 지킨다(생성기가 인자를 떨어뜨리면 깨진다).
+_TOOLS = {name: getattr(tax_overrides, name) for name in tax_overrides.UPSTREAMED}
 
 
 @pytest.mark.parametrize("name", sorted(tax_overrides.OVERRIDES))
@@ -48,19 +53,19 @@ def test_override_parameters_are_a_superset(name):
 _NOT_SAME_NAME = {"count_heavy_homes", "judge_156_3_from_portfolio", "calc_property_tax"}
 
 
-@pytest.mark.parametrize("name", sorted(set(tax_overrides.OVERRIDES) - _NOT_SAME_NAME))
+@pytest.mark.parametrize("name", sorted(set(tax_overrides.UPSTREAMED) - _NOT_SAME_NAME))
 def test_passthrough_overrides_cover_the_judgment_signature(name):
     """판정기를 그대로 부르는 대체 도구는 판정기 인자를 빠짐없이 받는다 — 판정기에 인자가 늘면 깨진다(의도한 것)."""
     judged = inspect.signature(getattr(tax_judgment, name)).parameters
     assert all(p.kind is p.POSITIONAL_OR_KEYWORD for p in judged.values()), "**kw 판정기는 _NOT_SAME_NAME 에서 따로 대조한다"
-    new = inspect.signature(tax_overrides.OVERRIDES[name]).parameters
+    new = inspect.signature(_TOOLS[name]).parameters
     assert set(judged) <= set(new), sorted(set(judged) - set(new))
     for p in set(new) - set(inspect.signature(SOURCE[name].fn).parameters):      # 더한 인자의 기본값 = 판정기 기본값
         assert new[p].default == judged[p].default, p
 
 
 def test_other_overrides_cover_what_they_call():
-    assert set(tax_overrides.OVERRIDES) >= _NOT_SAME_NAME
+    assert set(tax_overrides.UPSTREAMED) >= _NOT_SAME_NAME
     assert list(inspect.signature(tax_judgment.count_heavy_homes).parameters) == ["items", "heavy_tier"]
     kw = inspect.signature(tax_judgment.judge_156_3_from_portfolio).parameters["kw"]
     assert kw.kind is kw.VAR_KEYWORD
@@ -241,7 +246,7 @@ def test_count_heavy_homes_judges_the_sale_home_from_the_list():
 def _same_as_generated(name, grid):
     n = 0
     for kw in grid:
-        assert tax_overrides.OVERRIDES[name](**kw) == SOURCE[name].fn(**kw), (name, kw)
+        assert _TOOLS[name](**kw) == SOURCE[name].fn(**kw), (name, kw)
         n += 1
     return n
 

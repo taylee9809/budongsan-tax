@@ -47,6 +47,8 @@ def _tools() -> dict:
     try:  # 생성 도구의 고친 판(호스팅 서버가 같은 이름으로 대체한다) — 판정기·생성 도구보다 우선
         import tax_overrides
         found.update(tax_overrides.OVERRIDES)
+        # 원본 래퍼에 되돌려 반영한 도구는 생성 도구가 고친 판이다 — 판정기에 없는 인자(sale_label 등)를 받으므로 생성 도구를 쓴다.
+        found.update({n: getattr(tax_server, n) for n in getattr(tax_overrides, "UPSTREAMED", ())})
     except ImportError:
         pass
     return {k: v for k, v in found.items() if not inspect.iscoroutinefunction(v)}

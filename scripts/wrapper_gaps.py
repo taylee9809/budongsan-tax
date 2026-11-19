@@ -202,8 +202,8 @@ def audit() -> list:
         elif name in _NODE_INPUTS:
             composite, mapped, memo = _NODE_INPUTS[name]
             row["대조대상"] = "스스로 계산 — 노드 쪽 상대 " + composite
-            row["빠진_인자"] = [p for p in mapped]
-            row["남은_인자"] = [p for p in mapped if p not in over]
+            row["빠진_인자"] = [p for p in mapped if p not in wrapper]      # 원본 래퍼에 들어간 것은 뺀다
+            row["남은_인자"] = [p for p in row["빠진_인자"] if p not in over]
             row["메모"] = memo
         else:
             row["대조대상"] = "판정기 없음(조회·카탈로그·서식)"

@@ -30,9 +30,9 @@
 
 ## 대체 도구
 
-호스팅 서버의 도구 가운데 여덟은 생성 파일(`tax_server.py`)의 도구가 아니라 같은 이름의 고친 판(`tax_overrides.py`의 `OVERRIDES`)이다. 이름·제목·기존 인자(이름·순서·기본값)는 그대로이고 도구 수도 같다. 공개 저장소의 판정기·조문 노드에만 있는 입력을 생성 래퍼가 아직 넘기지 못해서 둔 것이며, 새 인자를 주지 않은 호출은 생성 도구와 결과가 같다(`tests/test_tax_overrides.py`의 격자).
+지금 대체 도구는 없다(`tax_overrides.py`의 `OVERRIDES`가 비어 있다). 2026-11-19에 아래 입력을 생성기 원본의 래퍼에 넣고 `tax_server.py`를 다시 만들어, 생성 도구가 이 입력을 직접 받는다(`estimate_reconstruction_levy`의 개발비용 항목 입력 포함, 9개 도구 33개 인자). 공개 저장소의 판정기·조문 노드에 새 입력이 생겨 생성 래퍼가 넘기지 못하게 되면 같은 이름의 고친 판을 `OVERRIDES`에 두어 호스팅 서버에서 대체한다 — `scripts/wrapper_gaps.py`와 `tests/test_tax_overrides.py`가 그 틈을 잡는다.
 
-| 도구 | 더한 입력 |
+| 도구 | 원본에 되돌려 넣은 입력 |
 |---|---|
 | `judge_transfer_reliefs` | 토지거래허가 사실(한시 배제 나목), 보유 목록으로 중과 판정 |
 | `count_heavy_homes` | 양도 주택을 지정하면 같은 목록으로 중과 대상·가산세율 판정 |
@@ -43,7 +43,7 @@
 | `calc_attached_land_limit` | 멸실된 상속주택의 정착면적·양도일 |
 | `calc_property_tax` | 지방세특례제한법 경감과의 비교(지방세법 §111의2④) |
 
-`judge_jongbu_one_home_status`는 대체하지 않았다 — 2026-09-30 개정의 조정대상지역 2년 판정 입력은 `other_homes` 원소의 키라 생성 도구로도 닿고, 그 키를 호스팅 설명에 적었다. 인자별 뜻과 근거 조문, 원본 래퍼에 되돌려 넣을 목록은 `docs/WRAPPER_GAPS.md`(`python scripts/wrapper_gaps.py`가 만든다)에 있다. `calc_jongbu_tax`(공제 0원·법인 거부)와 `calc_acquisition_tax`(§13의2는 주택 유상취득만)는 2026-11-18 생성기 원본에서 고쳐 다시 생성했으므로 대체하지 않는다.
+`judge_jongbu_one_home_status`는 인자를 더하지 않았다 — 2026-09-30 개정의 조정대상지역 2년 판정 입력은 `other_homes` 원소의 키라 생성 도구로도 닿고, 그 키를 호스팅 설명에 적었다. 인자별 뜻과 근거 조문, 원본 래퍼에 되돌려 넣을 목록은 `docs/WRAPPER_GAPS.md`(`python scripts/wrapper_gaps.py`가 만든다)에 있다. `calc_jongbu_tax`(공제 0원·법인 거부)와 `calc_acquisition_tax`(§13의2는 주택 유상취득만)는 2026-11-18 생성기 원본에서 고쳐 다시 생성했으므로 대체하지 않는다.
 
 ## 확인된 범위
 

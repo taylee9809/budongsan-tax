@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """korea-realestate 세금 판정·계산 MCP 서버 (공개판).
 
-이 파일은 scripts/extract_tax_server.py 가 server.py(비공개 통합 서버, git c046508)에서
+이 파일은 scripts/extract_tax_server.py 가 server.py(비공개 통합 서버, git eee27d4)에서
 세금 도구와 그 의존 정의만 AST로 뽑아 생성한 것이다. 손으로 고치지 말고 생성기를 다시 돌린다.
 도구 43개. 법령·재결례 조회 도구는 .env의 LAW_OC(법제처 Open API 키, 무료)가 있을 때만 동작한다.
 """
@@ -595,6 +595,8 @@ def calc_property_tax(
     urban_area_rate: float = -1.0,
     local_education_tax_rate: float = -1.0,
     taxable_base_cap: int = 0,
+    jiteuk_relief_type: str = "",
+    jiteuk_relief_facts: dict | None = None,
 ) -> dict:
     """Korea property tax (재산세) on housing: fair-market ratio, base cap, one-household special rate, urban area levy, education tax.
 
@@ -638,7 +640,28 @@ def calc_property_tax(
 
     Returns:
         계산 단계별 dict (검증 가능하도록) + 값 출처
+
+    추가 인자(2026-11-19, 판정기·조문 노드에 있는 입력을 도구로 넘긴다):
+      jiteuk_relief_type: 지방세특례제한법 재산세 경감 유형(노드 사실 '지방세특례_감면유형'). 특례세율과 견주어 경감 효과가 큰 쪽 하나를 고른다 (지방세법 §111의2④ — findings 113)
+      jiteuk_relief_facts: 그 경감 규정의 요건 사실(노드 사실 '지방세특례_사실') (지방세법 §111의2④ · 지방세특례제한법 §35②·§36의4② 등 — findings 113)
     """
+    if jiteuk_relief_type or jiteuk_relief_facts:
+        # 지방세법 §111의2④ — 1세대 1주택 특례세율과 지방세특례제한법 경감 중 경감 효과가 큰 것 하나. 조문 노드 합성(재산세_주택)이 견준다.
+        if not jiteuk_relief_type:
+            return {"계산불가": True, "근거": "지방세법 §111의2④",
+                    "사유": "jiteuk_relief_facts 만 주고 jiteuk_relief_type(감면유형)을 주지 않았다 — 어느 경감 규정과 견줄지 알 수 없다"}
+        직접 = [이름 for 이름, 준것 in (("fair_market_ratio", bool(fair_market_ratio)), ("tax_brackets", tax_brackets is not None),
+                                   ("urban_area_rate", urban_area_rate >= 0), ("local_education_tax_rate", local_education_tax_rate >= 0),
+                                   ("taxable_base_cap", taxable_base_cap > 0)) if 준것]
+        if 직접:
+            return {"계산불가": True, "근거": "지방세법 §111의2④ (표준세율 세액과 특례세율 세액을 같은 과세표준에서 견준다)",
+                    "사유": "지방세특례제한법 경감 비교(jiteuk_relief_type)는 상수표의 세율·비율로만 한다 — 직접 지정한 %s 와 함께 쓸 수 없다"
+                          % "·".join(직접)}
+        if official_price <= 0:
+            raise ValueError("official_price는 0보다 커야 합니다")
+        from tax_nodes.jaesan import 재산세_주택
+        return 재산세_주택(official_price, year, prev_year_official_price, one_home,
+                        지방세특례_감면유형=jiteuk_relief_type, 지방세특례_사실=dict(jiteuk_relief_facts or {}))
     if official_price <= 0:
         raise ValueError("official_price는 0보다 커야 합니다")
 
@@ -985,6 +1008,9 @@ def judge_acquisition_homes_and_rate(
     is_gift: bool = False,
     gift_std_value: int = 0,
     gift_from_one_home_household_to_family: bool = False,
+    prev_home_in_adjusted_area: bool | None = None,
+    new_contract_date: str | None = None,
+    new_deposit_paid_date: str | None = None,
 ) -> dict:
     """Count homes for acquisition tax and decide the rate (1/8/12%), temporary two-home relief, corporate rules.
 
@@ -1010,13 +1036,18 @@ def judge_acquisition_homes_and_rate(
     is_gift=True면 유상거래 매트릭스가 아니라 무상취득 트랙으로 간다 — 조정대상지역 +
     gift_std_value 3억 이상이면 12%, 1세대1주택자→배우자·직계존비속이면 제외.
     분양권 취득 주택은 잔금일이 아니라 권리 취득일 기준으로 목록을 구성할 것(영 §28의4① 후단).
+
+    추가 인자(2026-11-19, 판정기·조문 노드에 있는 입력을 도구로 넘긴다):
+      prev_home_in_adjusted_area: 종전 주택등의 조정대상지역 여부. 신규(in_adjusted_area)와 모두 조정대상지역이면 처분기한 2년, 모르면(None) 2~3년 사이 처분은 보류 (지방세법 시행령 §28의5①(대통령령 제36736호, 2026-09-30)·부칙 §2① — findings 170)
+      new_contract_date: 신규 주택 매매계약일. 계약금 지급일과 함께 2026-08-26 이전이면 종전 규정(3년) (대통령령 제36736호 부칙 §2② — findings 170)
+      new_deposit_paid_date: 신규 주택 계약금 지급일(위와 한 쌍) (대통령령 제36736호 부칙 §2② — findings 170)
     """
     return _tj.judge_acquisition_homes_and_rate(
-        homes, in_adjusted_area, is_corporation, exclusive_area_m2, acquire_date,
-        prev_disposal_date, prev_disposal_kind, disposal_to_same_household,
-        new_home_for_rental, is_gift, gift_std_value,
+        homes, in_adjusted_area, is_corporation, exclusive_area_m2, acquire_date, prev_disposal_date,
+        prev_disposal_kind, disposal_to_same_household, new_home_for_rental, is_gift, gift_std_value,
         gift_from_one_home_household_to_family,
-    )
+        prev_home_in_adjusted_area=prev_home_in_adjusted_area, new_contract_date=new_contract_date,
+        new_deposit_paid_date=new_deposit_paid_date)
 
 @mcp.tool(title='Capital gains reliefs', annotations=ToolAnnotations(title='Capital gains reliefs', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def judge_transfer_reliefs(
@@ -1031,6 +1062,14 @@ def judge_transfer_reliefs(
     contract_date: str = "",
     deposit_received: bool = False,
     contract_months_limit: int = 4,
+    land_permit_target: bool | None = None,
+    land_permit_applied_date: str = "",
+    land_permit_granted: bool = False,
+    six_month_region: bool | None = None,
+    location: str = "",
+    holdings: list[dict] | None = None,
+    sale_home: dict | None = None,
+    heavy_facts: dict | None = None,
 ) -> dict:
     """Decide capital gains exemptions, heavy-rate exclusions, long-term deduction table and high-value apportionment, producing calc_transfer_tax inputs.
 
@@ -1048,12 +1087,24 @@ def judge_transfer_reliefs(
     배제된다 — contract_date·deposit_received·contract_months_limit로 판정한다(나·다목).
     반환의 surcharge_rate·long_term_deduction_rate를 calc_transfer_tax에 그대로 넘기고,
     과세대상_양도차익_비율(<1이면 고가주택)은 양도차익에 곱해 안분한다.
+
+    추가 인자(2026-11-19, 판정기·조문 노드에 있는 입력을 도구로 넘긴다):
+      land_permit_target: 토지거래허가 대상 주택인지(None=모름 → 종전 판정) (소득세법 시행령 §167의3①12호의2 나목·다목(§167의4③·§167의10①·§167의11① 준용) — findings 88)
+      land_permit_applied_date: 토지거래허가 신청일(2026-05-09까지 신청이 요건) (소득세법 시행령 §167의3①12호의2 나목·다목(§167의4③·§167의10①·§167의11① 준용))
+      land_permit_granted: 허가를 받았는지 (소득세법 시행령 §167의3①12호의2 나목·다목(§167의4③·§167의10①·§167의11① 준용))
+      six_month_region: 나목 4)의 표 지역(계약 후 6개월·2026-11-09) 여부 (소득세법 시행령 §167의3①12호의2 나목·다목(§167의4③·§167의10①·§167의11① 준용))
+      location: 소재지 — six_month_region 을 주지 않았을 때 표 지역을 판정한다 (소득세법 시행령 §167의3①12호의2 나목·다목(§167의4③·§167의10①·§167의11① 준용))
+      holdings: 양도일 현재 세대 보유 목록 — 주면 heavy_home_count 대신 목록으로 중과를 판정한다 (소득세법 §104⑦ · 시행령 §167의3①·§167의10① — findings 113)
+      sale_home: 양도 주택(보유 목록의 항목 또는 그 사실) (소득세법 §104⑦ · 시행령 §167의3①·§167의10①)
+      heavy_facts: 세대 단위 사실(혼인일 등) (소득세법 시행령 §167의3⑨·§167의4⑤)
     """
     return _tj.judge_transfer_reliefs(
         is_one_household_one_home, holding_years, residing_years, sale_price,
         adjusted_at_sale, heavy_home_count, sale_date, meets_exemption_requirements,
         contract_date, deposit_received, contract_months_limit,
-    )
+        land_permit_target=land_permit_target, land_permit_applied_date=land_permit_applied_date,
+        land_permit_granted=land_permit_granted, six_month_region=six_month_region, location=location,
+        holdings=holdings, sale_home=sale_home, heavy_facts=heavy_facts)
 
 @mcp.tool(title='Same household test', annotations=ToolAnnotations(title='Same household test', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def judge_same_household(
@@ -1133,6 +1184,7 @@ def judge_temporary_two_homes(
     merge_date: str | None = None,
     other_homes_at_sale: int = 0,
     new_right_acquired: str | None = None,
+    adjusted_area_notice_date: str | None = None,
 ) -> dict:
     """Temporary two-home exemption test: one-year gap, disposal deadline, move-in requirement (Income Tax Decree art. 155(1)).
 
@@ -1153,13 +1205,19 @@ def judge_temporary_two_homes(
       other_homes_at_sale: 양도일 현재 종전·신규 외에 보유한 주택 수(합가분 제외) — §155①은 '일시적으로 2주택이 된 경우'의 종전주택 양도라 양도일 현재 3주택 이상이면 배제(조심2010중3600).
       new_right_acquired: 신규주택이 분양권에 기한 것이면 그 분양권 취득(계약)일. 2021-01-01 이후 취득 분양권은 주택 수에 들어가므로(법 §88 10호, 법 17477호 부칙) 종전주택 취득 전에 이미 보유했다면 '1주택 세대가 신규주택 취득'한 순서가 아니어서 배제(서면-2021-법규재산-3071 · 부동산납세과-812).
       prev_adjusted_after_new_contract: 판정기(tax_judgment.judge_temporary_two_homes)의 같은 이름 인자.
+
+    추가 인자(2026-11-19, 판정기·조문 노드에 있는 입력을 도구로 넘긴다):
+      adjusted_area_notice_date: 조정대상지역 공고일. 그날 이전에 신규 주택(권리 포함)을 취득했거나 계약·계약금 지급이면 1호(2년)에서 빠져 3년 (소득세법 시행령 §155①1호 대괄호(대통령령 제36737호, 2026-09-30) — findings 173)
     """
     return _tj.judge_temporary_two_homes(
         prev_acquired, new_acquired, prev_sale_date, prev_meets_exemption, one_year_rule_waived,
         prev_in_adjusted_area, new_in_adjusted_area, moved_in_within_1y, moved_in_date,
         new_home_tenant_lease_end, new_contract_date,
-        other_homes_at_acquisition=other_homes_at_acquisition, prev_adjusted_after_new_contract=prev_adjusted_after_new_contract, merged_homes_at_acquisition=merged_homes_at_acquisition, merge_kind=merge_kind, merge_date=merge_date, other_homes_at_sale=other_homes_at_sale, new_right_acquired=new_right_acquired
-    )
+        other_homes_at_acquisition=other_homes_at_acquisition,
+        prev_adjusted_after_new_contract=prev_adjusted_after_new_contract,
+        merged_homes_at_acquisition=merged_homes_at_acquisition, merge_kind=merge_kind, merge_date=merge_date,
+        other_homes_at_sale=other_homes_at_sale, new_right_acquired=new_right_acquired,
+        adjusted_area_notice_date=adjusted_area_notice_date)
 
 @mcp.tool(title='Special one-home cases (art. 155)', annotations=ToolAnnotations(title='Special one-home cases (art. 155)', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def judge_155_special(
@@ -1182,6 +1240,7 @@ def judge_155_special(
     merged_for_parent_care: bool = False,
     held_before_merge: bool = True,
     designated_by_agreement: bool = False,
+    homes_at_sale: int | None = None,
 ) -> dict:
     """Special one-home cases: marriage, caring for parents, inherited home, rural home (Income Tax Decree art. 155).
 
@@ -1196,19 +1255,35 @@ def judge_155_special(
     임대주택도 주택수에 든다. 2009-02-04 전 합가는 여성 직계존속 55세(parent_is_female).
     상속주택은 동거봉양 합가로 동일세대가 된 경우 merged_for_parent_care·held_before_merge로
     '합치기 이전부터 보유하던 주택'만 인정된다. §155 특례의 3중첩은 불허.
-    상속·거주주택은 요건 판정 후 count_transfer_homes 입력 플래그로 연결."""
+    상속·거주주택은 요건 판정 후 count_transfer_homes 입력 플래그로 연결.
+
+    추가 인자(2026-11-19, 판정기·조문 노드에 있는 입력을 도구로 넘긴다):
+      homes_at_sale: 양도일 현재 세대 주택 수. 1+1 요건(합가 당시 기준)을 바꾸지 않고 안내 플래그·'주택수_판정기준'만 낸다 (소득세법 시행령 §155④·⑤ · 법규과-1599(2024.6.25.))
+    """
     return _tj.judge_155_special(
-        kind, event_date, sale_date, homes_mine, homes_spouse_or_parent,
-        parent_max_age_at_merge, separate_household_at_inheritance,
-        general_home_acquired_before_inheritance, is_first_priority_inherited,
-        gifted_within_2y_before_inheritance, rental_registered,
-        residence_years_in_home, first_time_use,
-        excluded_homes_mine, excluded_homes_spouse_or_parent, parent_is_female,
-        merged_for_parent_care, held_before_merge, designated_by_agreement,
-    )
+        kind, event_date, sale_date, homes_mine, homes_spouse_or_parent, parent_max_age_at_merge,
+        separate_household_at_inheritance, general_home_acquired_before_inheritance, is_first_priority_inherited,
+        gifted_within_2y_before_inheritance, rental_registered, residence_years_in_home, first_time_use,
+        excluded_homes_mine, excluded_homes_spouse_or_parent, parent_is_female, merged_for_parent_care,
+        held_before_merge, designated_by_agreement, homes_at_sale=homes_at_sale)
 
 @mcp.tool(title='Home count for heavy rates', annotations=ToolAnnotations(title='Home count for heavy rates', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
-def count_heavy_homes(items: list[dict], heavy_tier: int = 3) -> dict:
+def count_heavy_homes(
+    items: list[dict],
+    heavy_tier: int = 3,
+    sale_label: str = "",
+    sale_date: str = "",
+    adjusted_at_sale: bool | None = None,
+    holding_years: float | None = None,
+    contract_date: str = "",
+    deposit_received: bool = False,
+    land_permit_target: bool | None = None,
+    land_permit_applied_date: str = "",
+    land_permit_granted: bool = False,
+    six_month_region: bool | None = None,
+    location: str = "",
+    household_facts: dict | None = None,
+) -> dict:
     """Count homes for heavy capital gains rates, excluding low-value provincial homes and other statutory exclusions.
 
     양도세 중과판정 주택수 산정 (영 §167의3~11 불산입 자동 적용 — 지방 3억 이하·§167의3①12호).
@@ -1223,8 +1298,51 @@ def count_heavy_homes(items: list[dict], heavy_tier: int = 3) -> dict:
     2(2주택 중과, 영 §167의10)면 기준시가 1억 이하(정비구역 제외) 불산입이 추가되고,
     3(3주택 이상, 영 §167의3)에는 그 완화가 없다.
     반환 주택수를 judge_transfer_reliefs의 heavy_home_count로 연결. 비과세용 주택수와 별개.
+
+    추가 인자(2026-11-19, 판정기·조문 노드에 있는 입력을 도구로 넘긴다):
+      sale_label: 양도 주택의 라벨 — 주면 같은 목록으로 그 주택의 중과 대상 여부를 판정해 '양도주택_중과판정'에 싣는다 (소득세법 §104⑦ · 시행령 §167의3①·§167의10① — findings 88)
+      sale_date: 양도일 (소득세법 §104⑦ · 시행령 §167의3①·§167의10①)
+      adjusted_at_sale: 양도 당시 조정대상지역 여부(None=대상 주택 여부까지만) (소득세법 §104⑦)
+      holding_years: 양도 주택 보유 연수(한시 배제는 2년 이상 전제) (소득세법 시행령 §167의3①12호의2 나목·다목(§167의4③·§167의10①·§167의11① 준용))
+      contract_date: 매매계약일 (소득세법 시행령 §167의3①12호의2 나목·다목(§167의4③·§167의10①·§167의11① 준용))
+      deposit_received: 계약금 수령 여부 (소득세법 시행령 §167의3①12호의2 나목·다목(§167의4③·§167의10①·§167의11① 준용))
+      land_permit_target: 토지거래허가 대상 여부 (소득세법 시행령 §167의3①12호의2 나목·다목(§167의4③·§167의10①·§167의11① 준용))
+      land_permit_applied_date: 토지거래허가 신청일 (소득세법 시행령 §167의3①12호의2 나목·다목(§167의4③·§167의10①·§167의11① 준용))
+      land_permit_granted: 허가 여부 (소득세법 시행령 §167의3①12호의2 나목·다목(§167의4③·§167의10①·§167의11① 준용))
+      six_month_region: 나목 4)의 표 지역 여부 (소득세법 시행령 §167의3①12호의2 나목·다목(§167의4③·§167의10①·§167의11① 준용))
+      location: 소재지 (소득세법 시행령 §167의3①12호의2 나목·다목(§167의4③·§167의10①·§167의11① 준용))
+      household_facts: 세대 단위 사실(혼인일·혼인후_신규취득일 등) (소득세법 시행령 §167의3⑨·§167의4⑤)
     """
-    return _tj.count_heavy_homes(items, heavy_tier)
+    r = _tj.count_heavy_homes(items, heavy_tier)
+    if not sale_label:
+        return r        # 양도 주택을 지정하지 않으면 원래 도구와 결과가 같다
+    대상 = [it for it in items if (it.get("라벨") or it.get("종류", "주택")) == sale_label]
+    if len(대상) != 1:
+        r["양도주택_중과판정"] = {
+            "판정불가": True,
+            "사유": "sale_label=%r 인 항목이 items 에 %d개다 — 양도하는 주택 하나에만 그 \"라벨\"을 붙인다" % (sale_label, len(대상))}
+        return r
+    from tax_nodes.yangdo_jungkwa_ho import 중과세율_판정
+    h = dict(대상[0])
+    # 한시 배제(영 §167의3①12호의2 등)는 양도 주택 항목의 사실로 읽는다 — 인자로 준 것만 덮어쓴다.
+    for 키, 값, 준것 in (("보유연수", holding_years, holding_years is not None),
+                      ("매매계약일", contract_date, bool(contract_date)),
+                      ("계약금_수령", deposit_received, bool(deposit_received)),
+                      ("토지거래허가_대상", land_permit_target, land_permit_target is not None),
+                      ("토허_신청일", land_permit_applied_date, bool(land_permit_applied_date)),
+                      ("토허_허가", land_permit_granted, bool(land_permit_granted)),
+                      ("6개월_지역", six_month_region, six_month_region is not None),
+                      ("소재지", location, bool(location))):
+        if 준것:
+            h[키] = 값
+    사실 = {k: v for k, v in (household_facts or {}).items() if k not in ("양도주택", "보유목록", "양도일", "양도당시_조정대상지역")}
+    p = 중과세율_판정(h, items, sale_date, adjusted_at_sale, **사실)
+    r["양도주택_중과판정"] = p
+    if p.get("가산_주택수") and p["가산_주택수"] != heavy_tier:
+        r.setdefault("플래그", []).append(
+            "양도주택_중과판정은 주택 목록에서 계열을 스스로 정한다(가산_주택수 %s) — heavy_tier=%s 로 센 '중과판정_주택수'와 계열이 다르다"
+            % (p["가산_주택수"], heavy_tier))
+    return r
 
 @mcp.tool(title='Holding tax one-home status', annotations=ToolAnnotations(title='Holding tax one-home status', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def judge_jongbu_one_home_status(other_homes: list[dict], base_date: str = "") -> dict:
@@ -1284,9 +1402,15 @@ def judge_co_inherited_owner(shares: list[dict],
         is_first_priority=is_first_priority, sale_date=sale_date, shares_changed_after_inheritance=shares_changed_after_inheritance, same_household_at_inheritance=same_household_at_inheritance, care_merge_exception=care_merge_exception)
 
 @mcp.tool(title='Attached land limit', annotations=ToolAnnotations(title='Attached land limit', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
-def calc_attached_land_limit(building_footprint_m2: float, land_area_m2: float,
-                             is_urban_area: bool = True, is_capital_region: bool = True,
-                             urban_zone: str = "주거상업공업") -> dict:
+def calc_attached_land_limit(
+    building_footprint_m2: float,
+    land_area_m2: float,
+    is_urban_area: bool = True,
+    is_capital_region: bool = True,
+    urban_zone: str = "주거상업공업",
+    demolished_inherited_footprint_m2: float | None = None,
+    sale_date: str = "",
+) -> dict:
     """Maximum land area attached to a home covered by the capital gains exemption, by zone (3x/5x/10x).
 
     주택 부수토지의 1세대1주택 비과세 한도 면적 (소법 §89①3호·영 §154⑦).
@@ -1295,9 +1419,15 @@ def calc_attached_land_limit(building_footprint_m2: float, land_area_m2: float,
     수도권 녹지 5배 / 수도권 밖 5배, 비도시지역 10배. 초과분은 비과세에서 빠져 별도 과세되며
     비사업용 토지 해당 여부(영 §168의6~14)를 추가 판정해야 한다. urban_zone은
     주거상업공업|녹지(도시지역·수도권일 때만 구분). 수용 시엔 사업인정 고시일 전날의
-    용도지역을 적용한다(2025-11-28 개정)."""
-    return _tj.calc_attached_land_limit(building_footprint_m2, land_area_m2,
-                                        is_urban_area, is_capital_region, urban_zone)
+    용도지역을 적용한다(2025-11-28 개정).
+
+    추가 인자(2026-11-19, 판정기·조문 노드에 있는 입력을 도구로 넘긴다):
+      demolished_inherited_footprint_m2: 멸실된 상속주택의 정착면적. 주면 한도 = 멸실 전 정착면적 × 배율(노드 소득세법시행령-155-2-멸실신축-b) (소득세법 시행령 §155②·§154⑦ · 서면4팀-2283(2005.11.23.) — findings 113)
+      sale_date: 양도일. 멸실 신축 경로에서 2022-01-01 전 양도분은 수도권 도시지역도 5배 (소득세법 시행령 §154⑦(2020.2.11. 개정 부칙 §39) — findings 113)
+    """
+    return _tj.calc_attached_land_limit(
+        building_footprint_m2, land_area_m2, is_urban_area, is_capital_region, urban_zone,
+        demolished_inherited_footprint_m2=demolished_inherited_footprint_m2, sale_date=sale_date)
 
 @mcp.tool(title='Reconstruction membership transfer', annotations=ToolAnnotations(title='Reconstruction membership transfer', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def judge_reconstruction_membership_transfer(
@@ -1495,6 +1625,7 @@ def estimate_reconstruction_levy(
     one_home_holding_years: float | None = None,
     is_one_home_at_end: bool = False,
     age_at_end: int | None = None,
+    development_cost_items: dict | None = None,
 ) -> dict:
     """Estimate the reconstruction excess-profit levy (재건축부담금): exemptions, base, rate bands, reductions.
 
@@ -1506,12 +1637,15 @@ def estimate_reconstruction_levy(
     이후 5천만원 폭으로 10~50%(2023-12-26 개정 — 구 수치 3천만/2천만은 오답).
     1세대1주택 장기보유 감경 6년 10%~20년 70%, 60세 이상 1주택자는 납부유예 가능.
     ⚠️판례 0건 영역이고 가액은 감정평가로 확정되므로 **반환값은 전부 추정치**다.
-    또 재건축부담금은 세금이 아니라 부담금이고 1차 납부의무자는 조합(§6)."""
+    또 재건축부담금은 세금이 아니라 부담금이고 1차 납부의무자는 조합(§6).
+
+    추가 인자(2026-11-19, 판정기·조문 노드에 있는 입력을 도구로 넘긴다):
+      development_cost_items: 개발비용을 항목(공사비·설계감리비·부대비용·그밖의경비·세금공과금·기부채납가액 등)으로 주면 노드가 산정해 development_cost 로 쓴다(development_cost 가 0일 때만) (재건축초과이익 환수에 관한 법률 §11①·시행령 §9 (노드 tax_nodes/jaegeonchuk_gaebalbiyong.py))
+    """
     return _tj.estimate_reconstruction_levy(
         end_price_total, start_price_total, member_count, normal_rise_rate, development_cost,
         start_date, end_date, management_plan_applied_date, one_home_holding_years,
-        is_one_home_at_end, age_at_end,
-    )
+        is_one_home_at_end, age_at_end, development_cost_items=development_cost_items)
 
 @mcp.tool(title='Relief caps and gates', annotations=ToolAnnotations(title='Relief caps and gates', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def judge_transfer_reduction_limit(
@@ -2178,6 +2312,9 @@ def judge_156_3_from_portfolio(
     delay_state_at_3y: bool = False,
     sold_by_that_method: bool = False,
     partial_move_reason: str = "",
+    bunyang_already_completed: bool = False,
+    other_homes: int | None = None,
+    excluded_homes: int | None = None,
 ) -> dict:
     """Same as judge_156_3_special, but counts homes from a holdings list.
 
@@ -2206,18 +2343,24 @@ def judge_156_3_from_portfolio(
         delay_state_at_3y: 분양권 취득일부터 3년이 되는 날 현재 그 상태였는지
         sold_by_that_method: 실제로 그 방법으로 양도됐는지
         partial_move_reason: ""|취학|근무|질병|학교폭력
+
+    추가 인자(2026-11-19, 판정기·조문 노드에 있는 입력을 도구로 넘긴다):
+      bunyang_already_completed: 양도 당시 분양권이 이미 완공돼 주택이 된 경우 — ③항 2호 기한 확인 플래그 (소득세법 시행령 §156의3③2호)
+      other_homes: 종전주택·분양권 외 주택 수를 직접 지정(목록에서 센 수를 덮어쓴다). 판정기 기본은 목록 산정이라 도구 기본값은 None (소득세법 시행령 §156의3②(1주택과 1분양권 전제))
+      excluded_homes: 그중 주택 수 제외 특례로 빠지는 수를 직접 지정(위와 한 쌍) (소득세법 시행령 §156의3② · 조세특례제한법 §99의4 등)
     """
-    return _tj.judge_156_3_from_portfolio(
-        items, sale_date,
-        new_home_completed=new_home_completed,
-        moved_in_date=moved_in_date,
-        continuous_residence_years=continuous_residence_years,
-        holding_waiver_reason=holding_waiver_reason,
-        sale_delay_reason=sale_delay_reason,
-        delay_state_at_3y=delay_state_at_3y,
-        sold_by_that_method=sold_by_that_method,
-        partial_move_reason=partial_move_reason,
-    )
+    kw = dict(new_home_completed=new_home_completed, moved_in_date=moved_in_date,
+              continuous_residence_years=continuous_residence_years, holding_waiver_reason=holding_waiver_reason,
+              sale_delay_reason=sale_delay_reason, delay_state_at_3y=delay_state_at_3y,
+              sold_by_that_method=sold_by_that_method, partial_move_reason=partial_move_reason)
+    if bunyang_already_completed:
+        kw["bunyang_already_completed"] = True
+    # 주택 수는 판정기가 목록에서 센다 — 직접 준 값(None 이 아닌 것)만 그 산정을 덮어쓴다.
+    if other_homes is not None:
+        kw["other_homes"] = other_homes
+    if excluded_homes is not None:
+        kw["excluded_homes"] = excluded_homes
+    return _tj.judge_156_3_from_portfolio(items, sale_date, **kw)
 
 @mcp.tool(title='Relief catalog entry', annotations=ToolAnnotations(title='Relief catalog entry', readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def get_relief_catalog_entry(article: str = "", article_id: str = "") -> dict:
