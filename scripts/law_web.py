@@ -23,9 +23,15 @@ scripts/coverage_audit.py(--source web), scripts/law_watch.py(--source web), scr
   장·절 헤더(편·관은 따라가지 않는다 — API 경로의 articles() 와 같다).
   조·호·목 번호는 앞 형제보다 커야 새 단위로 본다(본문 줄이 우연히 "제3조 …"나 "2026. 1. 1."로 시작해도 속지 않는다).
 
+자체 점검
+  py scripts/law_web.py [법령명 …]   화면의 문단 종류(CSS 클래스: 조 pty1_p4·pty1_ye1, 호 pty1_de2h, 목 pty1_de3)와
+                                     표지 파서가 센 조·호·목 수를 법령별로 맞춘다. 다르면 종료코드 1.
+                                     2026-11-18 추적 법령 29개 전부 일치.
+
 확인하지 못한 것
   이 파서는 2026-11-18 현재 law.go.kr 화면 구조에 맞춘 것이다. 법제처 Open API 실응답과 직접 대조하지는 못했다(키 없음) —
   대신 API 로 만들어 둔 조문 목록(data/coverage/coverage_audit.json, 27개 법령)과 법령별로 대조했다.
+  Playwright 예비 경로(browser=True)는 실제 브라우저로 돌려 보지 못했다(없을 때 안내하며 실패하는 것만 시험).
 """
 from __future__ import annotations
 
@@ -499,3 +505,75 @@ def current_meta(name: str, refresh: bool = False) -> dict:
     """현행 판의 메타데이터만 — law_watch.py 의 fetch_current 와 같은 키."""
     law = fetch(name, refresh=refresh)
     return {"mst": law["MST"], "공포일자": law["공포일자"], "시행일자": law["시행일자"], "제개정구분": law["제개정구분"]}
+
+
+# ───────────────────────── 자체 점검 ─────────────────────────
+
+def structure_check(body_html: str) -> dict:
+    """본문 HTML 의 문단 종류(조 pty1_p4 · 호 pty1_de2h · 목 pty1_de3)를 세어 텍스트 파서의 결과와 맞춘다.
+
+    파서는 화면 구조를 보지 않고 "제N조"·"1."·"가." 표지만으로 나눈다. 화면은 같은 것을 CSS 클래스로 구분해 두었으므로
+    두 수가 같으면 표지 파서가 조·호·목을 빠뜨리거나 지어내지 않았다는 뜻이다. 반환 {"조": (화면, 파서), "호": …, "목": …, "놓친호": […]}
+    """
+    cut = body_html.find('id="arDivArea"')
+    body = body_html[:cut if cut >= 0 else len(body_html)]
+
+    def texts(cls):
+        out = []
+        for m in re.finditer(r'<p class="%s"[^>]*>(.*?)</p>' % cls, body, re.S):
+            t = re.sub(r"\s+", " ", _html.unescape(re.sub(r"<[^>]+>", "", m.group(1)))).strip()
+            if t:
+                out.append(t)
+        return out
+
+    parsed = parse_text(html_to_text(body_html))
+    arts = [u for u in parsed["단위"] if u["조문여부"] == "조문"]
+    hos = [o for a in arts for h in a["항"] for o in h["호"]]
+    moks = [k for o in hos for k in o["목"]]
+    # 화면 쪽: 조문 머리는 pty1_p4(현행)와 pty1_ye1(장래 시행분). 호·목 문단 가운데 번호 표지로 시작하는 것만 센다
+    # (같은 클래스로 들여 쓴 이어지는 문단 — "성명, 주소, …" — 은 호·목이 아니다).
+    screen_ho = [t for t in texts("pty1_de2h") if _호머리.match(t)]
+    screen_mok = [t for t in texts("pty1_de3") if _목머리.match(t)]
+    out = {"조": (len(texts("pty1_p4")) + len(texts("pty1_ye1")), len(arts)), "호": (len(screen_ho), len(hos)),
+           "목": (len(screen_mok), len(moks)), "놓친호": [], "놓친목": []}
+    if out["호"][0] != out["호"][1]:
+        seen = {re.sub(r"\s+", "", "%s.%s" % (o["번호"], o["내용"]))[:12] for o in hos}
+        out["놓친호"] = [t[:60] for t in screen_ho if re.sub(r"\s+", "", t)[:12] not in seen]
+    if out["목"][0] != out["목"][1]:
+        seen = {re.sub(r"\s+", "", "%s.%s" % (k["번호"], k["내용"]))[:12] for k in moks}
+        out["놓친목"] = [t[:60] for t in screen_mok if re.sub(r"\s+", "", t)[:12] not in seen]
+    return out
+
+
+def _main() -> int:
+    import argparse
+    import sys
+    ap = argparse.ArgumentParser(description="law.go.kr 웹 본문 파서 자체 점검 — 화면 구조(CSS 클래스)와 표지 파서의 조·호·목 수를 맞춘다")
+    ap.add_argument("laws", nargs="*", help="법령명(없으면 추적 법령 전부)")
+    args = ap.parse_args()
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from law_watch import TRACKED_LAWS
+    bad = 0
+    for name in args.laws or TRACKED_LAWS:
+        try:
+            url = BASE + "/" + urllib.parse.quote("법령") + "/" + urllib.parse.quote(name.replace(" ", ""))
+            land = _http(url)
+            m = re.search(r'class="subTit"[^>]*>([^<]*)<', land)
+            ef = parse_header(m.group(1) if m else land).get("시행일자", "")
+            body = _http(BASE + "/LSW/lsInfoR.do", {"lsiSeq": _hidden(land, "lsiSeq"), "efYd": ef, "efYn": "Y", "chrClsCd": "010202",
+                                                   "nwJoYnInfo": "Y", "ancYnChk": "0", "netPrivateYn": "N"})
+            r = structure_check(body)
+        except Exception as exc:  # noqa: BLE001
+            print("!! %s: %s" % (name, exc))
+            bad += 1
+            continue
+        ok = all(a == b for a, b in (r["조"], r["호"], r["목"]))
+        bad += not ok
+        print("%s %-28s 조 %4d/%4d  호 %5d/%5d  목 %5d/%5d  (화면/파서)" % ("ok" if ok else "!!", name, *r["조"], *r["호"], *r["목"]))
+        for t in (r["놓친호"] + r["놓친목"])[:8]:
+            print("     놓친 호·목: " + t)
+    return 1 if bad else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(_main())

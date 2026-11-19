@@ -211,6 +211,18 @@ def test_html_to_text_and_parse():
     assert [o["번호"] for o in arts[0]["항"][0]["호"]] == ["1"]         # 표 안의 "1."은 호가 아니다
 
 
+def test_structure_check_matches_screen_classes():
+    # 화면의 문단 종류(CSS 클래스)와 표지 파서의 조·호·목 수가 같아야 한다
+    r = law_web.structure_check(HTML)
+    assert r["조"] == (1, 1) and r["호"] == (1, 1) and r["목"] == (1, 1) and r["놓친호"] == []
+    # 같은 클래스로 들여 쓴 이어지는 문단은 목으로 세지 않고, 장래 시행분 머리(pty1_ye1)는 조문으로 센다
+    more = HTML.replace('<p class="pty1_de2">', '<p class="pty1_de3">성명, 주소</p><p class="pty1_de2">').replace(
+        '<div id="arDivArea">', '<div class="lawcon"><p class="pty1_ye1"><span class="bl"><label> 제1조(계산식) </label></span> 새 본문</p>'
+        '<p class="pty1_de2"><span class="sfon">[시행일: 2027. 1. 1.] 제1조</span></p></div><div id="arDivArea">')
+    r = law_web.structure_check(more)
+    assert r["조"] == (2, 2) and r["목"] == (1, 1)
+
+
 # ───────── 받기: 캐시와 실패 ─────────
 
 def test_fetch_uses_cache_and_browser_path_fails_kindly(tmp_path, monkeypatch):
