@@ -213,3 +213,20 @@ def test_transfer_tax_without_land_area_unchanged():
 def test_attached_land_missing_zone_is_undetermined():
     r = 양도세_부동산(1_000_000_000, 400_000_000, 0, 2026, 10, 10, 양도일="2026-06-01", **{"1세대1주택": True}, 부수토지_면적=500, 주택_정착면적=100)
     assert "판정불가" in r[_K6] and r["총납부세액"] == 0
+
+
+# ------------------------------------------------------------------ 8. 비사업용 토지(개인) — '~부터 3년' 경계일(초일 불산입)
+@pytest.mark.parametrize("양도일, 비사업용", [("2026-05-31", False), ("2026-06-01", False), ("2026-06-02", True)])
+def test_non_business_land_three_year_boundary_matches_corporate(양도일, 비사업용):
+    """도시지역 편입일(2023-06-01)의 3년 응당일 당일은 유예, 다음 날부터 경과 — 법인세 쪽 노드와 같은 경계."""
+    from tax_nodes.yangdo_bisaeop import 비사업용토지_판정
+    r = 비사업용토지_판정("농지", 양도일, "2015-01-01", 재촌자경=True, 시지역_도시지역=True, 도시지역_편입일="2023-06-01", 편입전_1년_재촌자경=True)
+    assert r["비사업용토지"] is 비사업용
+    # 법인세 쪽 파일은 다른 세션이 통째로 바꾸는 중이라 내부 함수가 그대로 있을 때만 견준다(읽기만 한다).
+    import tax_nodes.beobin_bisaeop as 법인
+    try:
+        ctx = 실행({"도시지역_편입일": "2023-06-01", "양도일": 양도일, "시지역_도시지역": True}, int(양도일[:4]), 세목="법인세")
+        해당, _사유, _시작 = 법인._도시지역(ctx, False, 3, "나목")
+    except (AttributeError, TypeError, ValueError):
+        pytest.skip("beobin_bisaeop._도시지역 의 모양이 바뀌었다 — 법인 쪽 대조 생략")
+    assert 해당 is 비사업용
