@@ -37,7 +37,7 @@
 | `calc_attached_land_limit` | tax_judgment.calc_attached_land_limit | `demolished_inherited_footprint_m2` · `sale_date` | 대체 | — | — | — | 호스팅 |
 | `judge_reconstruction_membership_transfer` | tax_judgment.judge_reconstruction_membership_transfer | — | — | — | — | — | 호스팅 |
 | `judge_exemption_requirements` | tax_judgment.judge_exemption_requirements | — | — | — | — | — | 호스팅 |
-| `judge_rental_income_tax` | tax_judgment.judge_rental_income_tax | — | — | — | `own_homes` · `spouse_homes` · `deposits` | — | 생성 docstring |
+| `judge_rental_income_tax` | tax_judgment.judge_rental_income_tax | — | — | — | `own_homes` · `spouse_homes` · `deposits` | `주택ID` | 생성 docstring |
 | `calc_rental_income_tax` | tax_judgment.calc_rental_income_tax | — | — | — | — | — | 생성 docstring |
 | `judge_business_dealer_status` | tax_judgment.judge_business_dealer_status | — | — | — | — | — | 생성 docstring |
 | `calc_dealer_comparative_tax` | tax_judgment.calc_dealer_comparative_tax | — | — | — | `housing_trade_profits` · `tax_brackets` | — | 생성 docstring |

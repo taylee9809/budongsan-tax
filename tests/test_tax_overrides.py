@@ -389,8 +389,8 @@ def test_property_tax_relief_comparison_is_the_node_result():
     r = tax_overrides.calc_property_tax(300_000_000, 2026, one_home=True, jiteuk_relief_type="전세사기피해자",
                                         jiteuk_relief_facts=dict(_JEONSE, 전용면적=59))
     assert r == 재산세_주택(300_000_000, 2026, 0, True, 지방세특례_감면유형="전세사기피해자", 지방세특례_사실=dict(_JEONSE, 전용면적=59))
-    assert r["재산세 본세"] == 163_500 and r[_K4]["특례세율_배제"] is True and r[_K4]["지특법경감후_세액"] == 81_750
-    assert "감면 전 금액" in r[_K4]["주의"]
+    assert r["재산세 본세"] == 81_750 and r[_K4]["특례세율_배제"] is True and r[_K4]["지특법경감후_세액"] == 81_750
+    assert "감면 후 금액" in r[_K4]["주의"]
     # 비교 결과가 특례세율이거나 비교 대상이 아니면 금액은 생성 도구와 같다
     seen = {"특례": 0, "지특": 0, "비교없음": 0}
     for price, prev, one, kind, facts in itertools.product(
@@ -401,8 +401,9 @@ def test_property_tax_relief_comparison_is_the_node_result():
         old = tax_server.calc_property_tax(price, 2026, prev, one)
         if _K4 in new and new[_K4]["특례세율_배제"]:
             seen["지특"] += 1
-            assert new["재산세 본세"] == new[_K4]["표준세율_세액"] >= old["재산세 본세"]
-            assert new["과세표준"] == old["과세표준"] and new["도시지역분"] == old["도시지역분"]
+            # findings 110·291 조치 뒤 — 지특법을 고르면 본세는 감면 후 금액이다(표준세율 세액은 old 이상).
+            assert new["재산세 본세"] == new[_K4]["지특법경감후_세액"] and new[_K4]["표준세율_세액"] >= old["재산세 본세"]
+            assert new["과세표준"] == old["과세표준"] and new["도시지역분"] <= old["도시지역분"]
         else:
             seen["특례" if _K4 in new else "비교없음"] += 1
             assert {k: new[k] for k in _AMOUNTS} == {k: old[k] for k in _AMOUNTS}, (price, prev, one, kind, facts)
@@ -445,7 +446,7 @@ def test_new_overrides_through_the_server():
     assert r["일시적2주택"] is True
     r = call("calc_property_tax", {"official_price": 300_000_000, "year": 2026, "one_home": True,
                                    "jiteuk_relief_type": "전세사기피해자", "jiteuk_relief_facts": dict(_JEONSE, 전용면적=59)})
-    assert r["재산세 본세"] == 163_500
+    assert r["재산세 본세"] == 81_750
 
 
 # ───────────────────────────────────────────────────────────── stdio 진입점
