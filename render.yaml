@@ -5,7 +5,7 @@ services:
     runtime: docker
     plan: free
     dockerfilePath: ./Dockerfile.chatgpt
-    healthCheckPath: /healthz
+    healthCheckPath: /health
     autoDeployTrigger: checksPass
     envVars:
       - key: HOST

@@ -73,7 +73,9 @@ def make_server():
                                     idempotentHint=True, openWorldHint=False),
     )
 
-    @server.custom_route("/healthz", methods=["GET"])
+    # Cloud Run reserves some paths ending in "z" before they reach the container.
+    # Keep the public health endpoint on a non-reserved path.
+    @server.custom_route("/health", methods=["GET"])
     async def health(request):
         return JSONResponse({"status": "ok", "tools": len(server._tool_manager.list_tools()), "law_lookup": bool(tax_server.LAW_OC)})
 
