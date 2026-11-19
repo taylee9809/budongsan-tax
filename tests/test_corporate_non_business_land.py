@@ -344,7 +344,7 @@ def test_result_carries_statute_trail_and_feeds_the_calculator():
 
 
 def test_land_type_from_actual_use_then_register():
-    from tax_nodes.beobin_bisaeop import 법인_비사업용토지_판정
+    from tax_nodes.beopin_bisaeop import 법인_비사업용토지_판정
     assert 법인_비사업용토지_판정(SALE, BOUGHT, 사실상_현황="답", 공부상_지목="임야", 농업_주업=False)["토지종류"] == "농지"
     assert 법인_비사업용토지_판정(SALE, BOUGHT, 공부상_지목="임야")["토지종류"] == "임야"
     assert 법인_비사업용토지_판정(SALE, BOUGHT, 공부상_지목="잡종지", 재산세_토지구분="종합합산")["토지종류"] == "기타"

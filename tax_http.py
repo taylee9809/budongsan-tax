@@ -113,7 +113,7 @@ def make_server():
                                     idempotentHint=True, openWorldHint=False),
     )
 
-    # 법인의 부동산 양도 — 조문 노드(tax_nodes/beobin.py)로 계산한다. 외부 조회 없음.
+    # 법인의 부동산 양도 — 조문 노드(tax_nodes/beopin_toji.py 등)로 계산한다. 외부 조회 없음.
     server.add_tool(
         calc_corporate_property_sale_tax,
         title="Corporate tax on a property sale (법인세)",

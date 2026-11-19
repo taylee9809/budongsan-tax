@@ -1,7 +1,7 @@
 """법인 명의 부동산 도구 — 양도 세액·비사업용 토지 판정·주택분 종합부동산세·취득세. 호스팅 서버에 붙인다(tax_http.py).
 생성 파일 tax_server.py 는 건드리지 않는다.
 
-계산·판정은 전부 조문 노드(tax_nodes/beobin.py, beobin_bisaeop.py, jongbu.py, jongbu_setdae.py, chwideuk.py, chwideuk_gwase.py)가 한다.
+계산·판정은 전부 조문 노드(tax_nodes/beopin_toji.py, beopin_bisaeop.py, jongbu.py, jongbu_setdae.py, chwideuk.py, chwideuk_gwase.py)가 한다.
 이 파일은 도구 입출력만 맡는다. 세율은 data/tax_params.json 에서 연도로 읽고, 검증되지 않은 연도는 계산을 거부한다.
 
 calc_corporate_jongbu_tax · calc_corporate_acquisition_tax 는 2026-11-17 에 더했다. 생성 도구 calc_jongbu_tax 는 법인이면 호출자가
@@ -60,13 +60,13 @@ def calc_corporate_property_sale_tax(
     Returns:
         세목별 세액, 자산별 양도소득·세율·사유, 적용 조문, 미적용 조문(사유 포함), 값 출처, 다루지 않는 것.
     """
-    from tax_nodes import beobin
+    from tax_nodes import beopin_toji
 
     if not sales and taxable_base is None:
         raise ValueError("sales(양도한 토지등)나 taxable_base(과세표준) 중 하나는 있어야 합니다")
     if taxable_base is not None and taxable_base < 0:
         raise ValueError("taxable_base 는 0 이상이어야 합니다 — 결손이면 0을 넣는다")
-    r = beobin.법인_부동산양도(business_year, sales or [], 과세표준=taxable_base,
+    r = beopin_toji.법인_부동산양도(business_year, sales or [], 과세표준=taxable_base,
                          성실신고소규모법인=small_rental_corporation, 사업연도_월수=business_year_months)
     r.pop("근거표", None)
     total = sum(v for v in (r["법인세_각사업연도소득"], r["토지등양도소득_법인세"],
@@ -155,15 +155,15 @@ def judge_corporate_non_business_land(
         비사업용토지(True·False·None), 해당호, 사유, 비사업용_면적(일부만 해당할 때), 기간기준(일수와 각 목 충족),
         배제(부득이한 사유), 미등기, calc_입력_종류, 적용 조문, 미적용 조문(사유 포함), 값 출처, 주의, 다루지 않는 것.
     """
-    from tax_nodes import beobin_bisaeop
+    from tax_nodes import beopin_bisaeop
 
     facts = dict(facts or {})
     for k in ("양도일", "취득일", "토지종류", "연도"):
         if k in facts:
             raise ValueError("facts 에 %s 를 넣지 않는다 — transfer_date·acquisition_date·land_type 인자로 준다" % k)
-    if land_type not in beobin_bisaeop.토지종류들:
-        raise ValueError("land_type 은 %s 중 하나여야 합니다: %r" % (" | ".join(beobin_bisaeop.토지종류들), land_type))
-    r = beobin_bisaeop.법인_비사업용토지_판정(transfer_date, 취득일=acquisition_date or "", 토지종류=land_type, **facts)
+    if land_type not in beopin_bisaeop.토지종류들:
+        raise ValueError("land_type 은 %s 중 하나여야 합니다: %r" % (" | ".join(beopin_bisaeop.토지종류들), land_type))
+    r = beopin_bisaeop.법인_비사업용토지_판정(transfer_date, 취득일=acquisition_date or "", 토지종류=land_type, **facts)
     r.pop("근거표", None)
     notes = []
     if r["비사업용토지"] is None:

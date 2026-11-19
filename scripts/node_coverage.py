@@ -114,7 +114,10 @@ def _load_nodes():
     import tax_nodes.yangdo_gita_b  # noqa: F401
     import tax_nodes.sangjeung_gasanse  # noqa: F401
     import tax_nodes.chwideuk_gasanse  # noqa: F401
-    import tax_nodes.beobin  # noqa: F401
+    import tax_nodes.beopin_toji  # noqa: F401
+    import tax_nodes.beopin_imdae  # noqa: F401
+    import tax_nodes.beopin_jasan  # noqa: F401
+    import tax_nodes.beopin_oeguk  # noqa: F401
     import tax_nodes.jaesan_geonchuk  # noqa: F401
     import tax_nodes.yangdo_jungkwa_ho  # noqa: F401
     import tax_nodes.yangdo_jeongui_ho  # noqa: F401
@@ -122,7 +125,7 @@ def _load_nodes():
     import tax_nodes.nongteuk  # noqa: F401
     import tax_nodes.jongbu_imdaegigan  # noqa: F401
     import tax_nodes.jiteuk_jeongui  # noqa: F401
-    import tax_nodes.beobin_bisaeop  # noqa: F401
+    import tax_nodes.beopin_bisaeop  # noqa: F401
     from tax_nodes import 전체
     from tax_nodes.engine import 모두올림
     모두올림()        # 위 목록에 빠진 새 모듈이 있어도 센다 — 실행기가 계산할 때 올리는 것과 같은 집합
