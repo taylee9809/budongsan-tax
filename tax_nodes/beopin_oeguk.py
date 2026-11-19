@@ -25,6 +25,16 @@ from datetime import date, timedelta
 from fractions import Fraction
 
 from tax_nodes.engine import 노드, 미적용, 세목설정, 실행, 전체
+from tax_nodes.beopin_pan import 판
+
+_엔진노드 = 노드
+
+
+def 노드(**kw):
+    """engine.노드 — 현행 본문과 대조된 노드(tax_nodes/beopin_pan.py)만 mst 를 현행 판 번호로 바꿔 등록한다."""
+    kw["mst"] = 판(kw["법령"], kw["id"], kw.get("mst", ""))
+    return _엔진노드(**kw)
+
 
 세목설정("법인세")
 

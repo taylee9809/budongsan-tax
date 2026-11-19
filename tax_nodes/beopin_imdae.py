@@ -32,6 +32,8 @@ from datetime import date, timedelta
 from decimal import Decimal, ROUND_DOWN
 
 from tax_nodes.engine import 노드 as _엔진노드, 미적용, 세목설정, 실행, 전체
+from tax_nodes.beopin_pan import 판
+
 
 세목설정("법인세")
 
@@ -51,6 +53,7 @@ def 노드(**kw):
             return r
         g.__module__ = fn.__module__
         g.__name__ = fn.__name__
+        kw["mst"] = 판(kw["법령"], kw["id"], kw.get("mst", ""))      # 현행 본문과 대조된 노드만 현행 판 번호
         _엔진노드(**kw)(g)
         return fn
     return deco
