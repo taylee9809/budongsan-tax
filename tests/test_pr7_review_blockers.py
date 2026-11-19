@@ -290,3 +290,20 @@ def test_ruling_verifier_strict_fails_only_on_new_mismatch(tmp_path, capsys):
     assert v.main(["--strict", str(bad)]) == 1             # 새 불일치는 실패
     assert v.main([str(bad)]) == 0                         # --strict 없이는 종전대로 0
     capsys.readouterr()
+
+
+def test_sangsaeng_pre_acquisition_lease_is_pending_with_both_readings():
+    """상생임대 — 취득 전 체결·취득과 동시에 개시한 임대차: 예규(불충족)와 조심 2026서2935(충족)가 갈린다. 확정하지 않는다."""
+    from tax_nodes.yangdo_gigan import _상생판정
+    from datetime import date
+    first = {"임차인": "A", "계약일": "2021-01-20", "개시일": "2021-03-16", "종료일": "2023-03-15", "보증금": 400_000_000}
+    second = {"임차인": "B", "계약일": "2023-02-10", "개시일": "2023-03-16", "종료일": "2025-03-15", "보증금": 420_000_000}
+    r = _상생판정([first, second], date(2021, 3, 16), date(2025, 7, 8), "20250708")
+    assert r["충족"] is None
+    assert r["해석충돌"]["예규"]["충족"] is False and r["해석충돌"]["심판례"]["충족"] is True
+    # 전 소유자의 임차인을 승계한 계약(취득 전 개시)은 다툼 없이 직전임대차계약이 아니다 — 보류가 아니라 탈락
+    inherited = dict(first, 개시일="2021-02-01")
+    assert _상생판정([inherited, second], date(2021, 3, 16), date(2025, 7, 8), "20250708")["충족"] is False
+    # 취득 후 체결한 계약이면 종전대로 충족
+    after = dict(first, 계약일="2021-03-16")
+    assert _상생판정([after, second], date(2021, 3, 16), date(2025, 7, 8), "20250708")["충족"] is True

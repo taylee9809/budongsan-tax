@@ -24,7 +24,8 @@ _FILES = sorted(_DIR.glob("rulings6_*.jsonl"))
 _CASES = [(f.name, json.loads(l)) for f in _FILES for l in f.read_text(encoding="utf-8").splitlines() if l.strip()]
 _IDS = [c["case_id"] for _, c in _CASES]
 _알려진_불일치: dict = {
-    "R2103909-1": "findings 260 — 분양 취득 전 체결·취득과 동시에 개시된 임대차를 노드가 직전임대차계약에서 뺀다(조심 2026서2935 는 인정)",
+    "R2103909-1": ("findings 260 — 분양 취득 전 체결·취득과 동시에 개시된 임대차: 예규는 직전임대차계약 아님, 조심 2026서2935 는 인정. "
+                   "노드는 확정하지 않고 충족=None(해석충돌에 두 결론)을 낸다 — 심판례 결론(True)과는 여전히 다르다"),
 }
 _제외사유 = ("구법", "사실판단", "정보부족", "쟁점-노드밖", "연결오류", "판례충돌", "해석충돌")
 

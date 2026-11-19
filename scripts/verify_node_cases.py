@@ -33,7 +33,7 @@ _없음 = object()
 #: 판례와 노드 결론이 갈리는 것을 알고 둔 케이스 — case_id → 사유. 여기 없는 불일치는 --strict 에서 실패다.
 #: tests/test_rulings*_cases.py 의 _알려진_불일치 와 같아야 한다(tests/test_pr7_review_blockers.py 가 대조).
 알려진_불일치 = {
-    "R2103909-1": "상생임대주택 — 심판례와 예규의 결론이 갈린다(data/verification/findings.jsonl 해석 충돌 기록). 노드는 예규 쪽",
+    "R2103909-1": "상생임대주택 — 심판례(충족)와 예규(불충족)가 갈린다(findings 260). 노드는 확정하지 않고 충족=None·해석충돌을 낸다",
 }
 
 
