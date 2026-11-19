@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """korea-realestate 세금 판정·계산 MCP 서버 (공개판).
 
-이 파일은 scripts/extract_tax_server.py 가 server.py(비공개 통합 서버, git 89af477)에서
+이 파일은 scripts/extract_tax_server.py 가 server.py(비공개 통합 서버, git c046508)에서
 세금 도구와 그 의존 정의만 AST로 뽑아 생성한 것이다. 손으로 고치지 말고 생성기를 다시 돌린다.
 도구 43개. 법령·재결례 조회 도구는 .env의 LAW_OC(법제처 Open API 키, 무료)가 있을 때만 동작한다.
 """
@@ -283,7 +283,7 @@ def calc_transfer_tax(
     if gain <= 0:
         return {"양도차익": gain, "납부세액": 0, "비고": "양도차익 없음(손실 또는 0)"}
 
-    long_term_deduction = int(gain * long_term_deduction_rate)
+    long_term_deduction = _곱(gain, long_term_deduction_rate)
     income_after_deduction = gain - long_term_deduction
     taxable_base = max(income_after_deduction - basic_deduction, 0)
 
@@ -298,7 +298,7 @@ def calc_transfer_tax(
             break
 
     applied_rate = base_rate + surcharge_rate
-    calculated_tax = max(int(taxable_base * applied_rate) - progressive_deduction, 0)
+    calculated_tax = max(_곱(taxable_base, applied_rate) - progressive_deduction, 0)
 
     # §104① 후단·§104⑦ 후단 — 하나의 자산이 둘 이상 세율에 해당하면 산출세액이 큰 것을
     # 적용한다. 단기보유는 누진세율이 아니라 비례세율이라 과세표준이 작을수록 단기 쪽이
@@ -313,15 +313,15 @@ def calc_transfer_tax(
         band = short["분양권"]
         rate = band["1년미만"] if holding_years < 1 else band["그이후"]
         비교.append({"근거": "분양권 세율", "세율": rate,
-                    "세액": int(taxable_base * rate)})
+                    "세액": _곱(taxable_base, rate)})
     elif holding_years < 1:
         rate = short["1년미만"]["주택등" if 주택등 else "그밖"]
         비교.append({"근거": "1년 미만 단기세율", "세율": rate,
-                    "세액": int(taxable_base * rate)})
+                    "세액": _곱(taxable_base, rate)})
     elif holding_years < 2:
         rate = short["1년이상2년미만"]["주택등" if 주택등 else "그밖"]
         비교.append({"근거": "1년 이상 2년 미만 단기세율", "세율": rate,
-                    "세액": int(taxable_base * rate)})
+                    "세액": _곱(taxable_base, rate)})
     if len(비교) > 1:
         src["비교과세"] = "소득세법 §104① 후단·§104⑦ 후단 — 큰 세액 채택"
     채택 = max(비교, key=lambda x: x["세액"])
@@ -330,7 +330,7 @@ def calc_transfer_tax(
     if 채택["근거"].startswith("기본세율") is False:
         progressive_deduction = 0
 
-    local_income_tax = int(calculated_tax * 0.1)
+    local_income_tax = _곱(calculated_tax, 0.1)
 
     return {
         "양도차익": gain,
@@ -521,9 +521,9 @@ def calc_acquisition_tax(
             "주택유상 세율×50%" if is_housing_sale else "표준세율 − 중과기준세율 %.3f" % 중과기준)
     else:
         applied_rate = standard_rate + heavy_surcharge_rate + ordinance_adjustment_rate
-    acquisition_tax = int(acquisition_price * applied_rate)
-    local_education_tax = int(acquisition_price * local_education_tax_rate)
-    rural_special_tax = int(acquisition_price * rural_special_tax_rate)
+    acquisition_tax = _곱(acquisition_price, applied_rate)
+    local_education_tax = _곱(acquisition_price, local_education_tax_rate)
+    rural_special_tax = _곱(acquisition_price, rural_special_tax_rate)
 
     notes = []
     if not exclusive_area and rural_special_tax:
@@ -563,6 +563,11 @@ def calc_acquisition_tax(
         "주의": " / ".join(notes),
         **({"경고": warnings} if warnings else {}),
     }
+
+def _곱(금액, 비율) -> int:
+    """금액 × 비율을 원 미만 버림으로. 부동소수 곱(92,000,000 × 0.7 = 64,399,999.99…)이 1원 모자라게 잘리는 것을 막는다(findings 340)."""
+    from fractions import Fraction
+    return int(Fraction(str(비율)) * Fraction(str(금액)))
 
 def _apply_brackets(taxable_base: int, tax_brackets: list[dict]) -> tuple[float, int]:
     """누진세율표에서 과세표준이 속한 구간의 (세율, 누진공제)를 찾는다.
@@ -678,9 +683,9 @@ def calc_property_tax(
         cap_applied = True
 
     rate, deduction = _apply_brackets(taxable_base, tax_brackets)
-    main_tax = max(int(taxable_base * rate) - deduction, 0)
-    urban_area_tax = int(taxable_base * urban_area_rate)
-    local_education_tax = int(main_tax * local_education_tax_rate)
+    main_tax = max(_곱(taxable_base, rate) - deduction, 0)
+    urban_area_tax = _곱(taxable_base, urban_area_rate)
+    local_education_tax = _곱(main_tax, local_education_tax_rate)
 
     return {
         "시가표준액(공시가격)": official_price,
@@ -886,12 +891,12 @@ def calc_jongbu_tax(
         }
 
     rate, deduction = _apply_brackets(taxable_base, tax_brackets)
-    gross_tax = max(int(taxable_base * rate) - deduction, 0)
+    gross_tax = max(_곱(taxable_base, rate) - deduction, 0)
 
     after_property_credit = max(gross_tax - property_tax_credit, 0)
 
     credit_rate = min(age_credit_rate + holding_credit_rate, credit_cap)
-    owner_credit = int(after_property_credit * credit_rate)
+    owner_credit = _곱(after_property_credit, credit_rate)
     tax_after_credit = after_property_credit - owner_credit
 
     cap_applied = False
@@ -910,7 +915,7 @@ def calc_jongbu_tax(
             tax_after_credit = cap_amount
             cap_applied = True
 
-    rural_special_tax = int(tax_after_credit * rural_special_tax_rate)
+    rural_special_tax = _곱(tax_after_credit, rural_special_tax_rate)
 
     notes = []
     if property_tax_credit == 0:
@@ -1115,8 +1120,8 @@ def judge_temporary_two_homes(
     prev_sale_date: str | None = None,
     prev_meets_exemption: bool = True,
     one_year_rule_waived: bool = False,
-    prev_in_adjusted_area: bool = False,
-    new_in_adjusted_area: bool = False,
+    prev_in_adjusted_area: bool | None = None,
+    new_in_adjusted_area: bool | None = None,
     moved_in_within_1y: bool | None = None,
     moved_in_date: str | None = None,
     new_home_tenant_lease_end: str | None = None,
@@ -1913,7 +1918,7 @@ def calc_gift_tax(
         surcharge = int(gross * (할증["미성년20억초과"] if over_2b_minor_skip
                                  else 할증["기본"]))
     after_prior = max(0, gross + surcharge - prior_gift_tax_paid)
-    filing_credit = int(after_prior * filing_credit_rate)
+    filing_credit = _곱(after_prior, filing_credit_rate)
     final_tax = after_prior - filing_credit
 
     out = {
@@ -1992,7 +1997,7 @@ def calc_inheritance_tax(
     할증 = tax_params.get_param("상증세.세대생략할증", year)
     surcharge = int(gross * skip_portion *
                     (할증["미성년20억초과"] if over_2b_minor_skip else 할증["기본"]))
-    filing_credit = int((gross + surcharge) * filing_credit_rate)
+    filing_credit = _곱(gross + surcharge, filing_credit_rate)
     final_tax = gross + surcharge - filing_credit
 
     out = {

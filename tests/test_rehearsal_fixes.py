@@ -47,3 +47,15 @@ def test_342_reasons_follow_corporate_judgment():
     사유 = {m["표기"]: m["사유"] for m in r["미적용 조문"]}
     assert r["대도시중과"] is None and 사유["지방세법 §13②"].startswith("판정 불가")
     assert 사유["지방세법 §13의2④"].startswith("법인 취득")
+
+
+def test_340_short_term_rate_has_no_float_truncation():
+    import tax_server
+    r = tax_server.calc_transfer_tax(purchase_price=500000000, sale_price=600000000, holding_years=0.47,
+                                     necessary_expenses=5500000, year=2026, asset_type="주택")
+    assert r["양도소득세"] == 64_400_000 and r["지방소득세(10%)"] == 6_440_000 and r["총납부세액"] == 70_840_000
+
+
+def test_290_generated_tool_also_defaults_to_unknown():
+    import tax_server
+    assert tax_server.judge_temporary_two_homes("2020-01-01", "2026-09-01", "2029-01-15")["특례충족"] is None
