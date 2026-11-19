@@ -24,9 +24,9 @@ load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
 
 LAW_OC = os.environ.get("LAW_OC", "")
 
-LAW_SEARCH_URL = "http://www.law.go.kr/DRF/lawSearch.do"
+LAW_SEARCH_URL = "https://www.law.go.kr/DRF/lawSearch.do"
 
-LAW_SERVICE_URL = "http://www.law.go.kr/DRF/lawService.do"
+LAW_SERVICE_URL = "https://www.law.go.kr/DRF/lawService.do"
 
 SERVER_INSTRUCTIONS = 'Korean real estate tax engine. Computes and judges 취득세 (acquisition tax), 재산세 (property tax), 종합부동산세 (comprehensive holding tax), 양도소득세 (capital gains tax), 주택임대소득세 (rental income tax), 증여세·상속세 (gift/inheritance tax on real estate) and 재건축부담금 (reconstruction levy) under Korean law. Every result lists the statute articles applied, the articles considered but not applied (with reasons), and the provenance grade of each input. Use judge_* tools first to settle facts (household, home count, exemptions), then calc_* tools for amounts. Not tax advice; results are one reading of the statute.'
 
@@ -204,7 +204,7 @@ def calc_transfer_tax(
     asset_type: str = "주택",
     tax_brackets: list[dict] | None = None,
     long_term_deduction_rate: float = -1.0,
-    basic_deduction: int = 0,
+    basic_deduction: int | None = None,
     surcharge_rate: float = -1.0,
     heavy_home_count: int = 0,
 ) -> dict:
@@ -231,7 +231,8 @@ def calc_transfer_tax(
         tax_brackets: [{"upto": 과세표준 상한(원, 마지막 구간은 None), "rate": 세율(0~1), "deduction": 누진공제액(원)}, ...]
                       최신 소득세법 시행령 별표에서 확인해서 넘길 것 — 하드코딩된 기본값 없음
         long_term_deduction_rate: 장기보유특별공제율 (0~1), 다주택 중과 대상이면 0으로 넘길 것
-        basic_deduction: 양도소득 기본공제 (기본 250만원, 연 1회)
+        basic_deduction: 양도소득 기본공제. 생략(null)하면 연도별 상수표 값(250만원, 연 1회)을 쓴다.
+                         같은 해 다른 양도에서 이미 공제를 썼으면 0 을 명시한다 — 0 은 "공제 0원"으로 계산한다
         surcharge_rate: 다주택자 중과세율 가산분 (0~1), 해당 없으면 0
 
     소득세법 §95②에 따라 §104⑦ 중과대상 주택은 장특공 자체가 배제된다(미등기와 동급) —
@@ -258,7 +259,9 @@ def calc_transfer_tax(
             src["중과 가산세율"] = tax_params.cite("양도세.중과.가산세율", year)
     if long_term_deduction_rate < 0:
         long_term_deduction_rate = 0.0   # 판정 결과를 못 받았으면 안전하게 0
-    if not basic_deduction:
+    if basic_deduction is not None and basic_deduction < 0:
+        raise ValueError("basic_deduction은 0 이상이어야 합니다(미지정은 생략 또는 null)")
+    if basic_deduction is None:
         basic_deduction = tax_params.get_param("양도세.기본공제", year)
         src["기본공제"] = tax_params.cite("양도세.기본공제", year)
     if tax_brackets is None:

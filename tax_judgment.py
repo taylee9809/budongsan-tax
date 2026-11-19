@@ -387,7 +387,8 @@ def judge_acquisition_rate(counted_homes_including_new: int, in_adjusted_area: b
             "플래그": flags,
         }
         return out
-    if temporary_two_homes and not is_corporation:
+    # 일시적 2주택은 '주택등을 1개 소유한 1세대'가 다른 1주택을 취득한 경우뿐이다(영 §28의5①) — 산입 주택 수가 2일 때만 본다.
+    if temporary_two_homes and not is_corporation and n == 2:
         return {
             "판정": "일시적 2주택 — 중과 배제(영 §28의5)",
             "취득세율": "1~3% (6~9억 사잇공식은 호출자 계산 — §11①8호)",
@@ -432,6 +433,9 @@ def judge_acquisition_rate(counted_homes_including_new: int, in_adjusted_area: b
             _cite("농특세 0.2/0.6/1.0%", "농특세법 §5①6호 (표준세율 2% 치환+중과가산 유지)", "A"),
         ],
         "플래그": ((["일시적 2주택(영 §28의5: 종전 주택등 1개+3년 내 처분, 1년 경과 요건 없음) 해당 시 중과 배제 — 별도 확인"]
+                 if not is_corporation and n == 2 else
+                 [f"산입 주택 수 {n}개 — 일시적 2주택(영 §28의5①)은 종전 주택등을 1개 소유한 1세대가 신규 1주택을 취득한 경우(산입 2주택)뿐이라 "
+                  "적용되지 않는다. 종전 주택 처분 예정이어도 중과세율이다"]
                  if not is_corporation else
                  ["법인 취득(§13의2①1호)에는 일시적 2주택 제외가 없다 — 괄호는 ①2호에만 있다"])
                 if heavy else []),
@@ -478,6 +482,15 @@ def judge_acquisition_homes_and_rate(
         temp = judge_acq_temporary_two_homes(
             acquire_date, prev_disposal_date, prev_disposal_kind, disposal_to_same_household,
             prev_home_in_adjusted_area, bool(in_adjusted_area), new_contract_date, new_deposit_paid_date)
+    # 영 §28의5① — '주택등을 1개 소유한 1세대'가 신규 1주택을 취득한 경우만 일시적 2주택이다. 종전 주택등이 2개 이상이면(산입 3주택↑)
+    # 처분기한을 지켜도 해당하지 않는다(실행 노드 지방세법시행령-28의5-1 의 '종전주택등_수 == 1'과 같은 요건).
+    if temp and counting["산입_주택수"] > 2:
+        if temp["일시적2주택"] is not False:
+            temp["일시적2주택"] = False
+        temp["종전주택등_1개요건"] = False
+        temp["근거"].append(_cite(
+            "산입 주택 수 %d개(신규 포함) — 종전 주택등이 %d개라 '1개 소유한 1세대'가 아니다. 일시적 2주택 불해당"
+            % (counting["산입_주택수"], counting["산입_주택수"] - 1), "지방세법 시행령 §28의5①", "A"))
     rate = judge_acquisition_rate(
         counting["산입_주택수"], in_adjusted_area, is_corporation, exclusive_area_m2,
         is_gift, gift_std_value, gift_from_one_home_household_to_family,
@@ -1298,7 +1311,11 @@ def judge_temporary_two_homes(prev_acquired: str, new_acquired: str,
     else:
         qualifies = one_year_ok and (sale_ok is not False) and prev_meets_exemption and (move_in_ok is not False)
         if not prev_sale_date:
-            qualifies = one_year_ok and prev_meets_exemption and (move_in_ok is not False)
+            # 종전주택을 아직 팔지 않았다 — 다른 요건이 갖춰졌어도 기한 내 양도 여부를 모르므로 충족으로 확정하지 않는다.
+            qualifies = None if (one_year_ok and prev_meets_exemption and (move_in_ok is not False)) else False
+            if qualifies is None:
+                flags.append(f"종전주택 양도(예정)일 미입력 — 다른 요건은 갖췄으나 {deadline.isoformat()}까지 양도해야 특례가 적용된다. "
+                             "양도일을 받아 다시 판정한다(판정 보류)")
 
     return {
         "특례충족": qualifies,
@@ -1548,7 +1565,8 @@ def count_heavy_homes(items: list[dict], heavy_tier: int = 3) -> dict:
       '항목별'에 "양도시_중과제외": True 로 표시하고 '양도시_중과제외_9호'에 라벨을 모은다.
       (2026-11-17 전에는 heavy_tier=2 에서 이 주택을 수에서 뺐다 — findings 50.)
     """
-    counted, details, low9 = 0, [], []
+    counted, details, low9, pending, need = 0, [], [], 0, []
+    _orig_ids = [id(x) for x in items]
     # 명의신탁 귀속(부동산실명법 §4②)·분양권의 범위(법 §88 10호) — count_transfer_homes 와 같은 선택 키. 없으면 종전 그대로(2026-11-18 연결).
     from tax_nodes.setdae_jutaeksu import _명의신탁_정리, _분양권범위_정리
     items, _removed_trust = _명의신탁_정리(list(items))
@@ -1557,13 +1575,20 @@ def count_heavy_homes(items: list[dict], heavy_tier: int = 3) -> dict:
         details.append({"항목": lab, "산입": False, "사유": why})
     for it in items:
         label = it.get("라벨") or it.get("종류", "주택")
-        std = int(it.get("기준시가", 0))
+        # 기준시가를 주지 않은 것은 '0원'이 아니라 '모른다'이다 — 지방 3억 이하(불산입)로 보지 않는다.
+        std_known = it.get("기준시가") not in (None, "", 0)
+        std = int(it.get("기준시가") or 0)
         inc, why = True, "산입"
         small, small_why = _is_small_new_house(it)
         if it.get("인구감소등_12호"):
             inc, why = False, "§167의3①12호(소형신축·인구감소지역 등) — 불산입"
         elif small:
             inc, why = False, small_why
+        elif it.get("지방소재") and not std_known:
+            inc, why = None, ("판정 보류 — 지방(수도권·광역시·특자시 밖) 주택인데 기준시가 미입력. 양도 당시 기준시가가 3억 이하면 "
+                              "불산입, 넘으면 산입이다(영 §167의3①1호·167의4②·167의11②)")
+            idx = _orig_ids.index(id(it)) if id(it) in _orig_ids else None
+            need.append("items[%s].기준시가" % (idx if idx is not None else label))
         elif it.get("지방소재") and std <= HEAVY_LOCAL_PRICE_LIMIT:
             inc, why = False, "지방(수도권·광역시·특자시 밖) + 기준시가 3억 이하 — 불산입 (영 §167의3①1호·167의4②·167의11②)"
         d = {"항목": label, "산입": inc, "사유": why}
@@ -1574,6 +1599,8 @@ def count_heavy_homes(items: list[dict], heavy_tier: int = 3) -> dict:
             low9.append(label)
         if inc:
             counted += 1
+        elif inc is None:
+            pending += 1
         details.append(d)
     flags = [f"heavy_tier={heavy_tier} 기준으로 셌다 — 수에서 빼는 주택(지방 3억 이하·12호)은 두 계열이 같고, "
              "양도 주택 자체의 중과 제외 사유가 계열별로 다르다 (영 §167의10①3·4·7·9호는 2주택 전용)",
@@ -1583,8 +1610,16 @@ def count_heavy_homes(items: list[dict], heavy_tier: int = 3) -> dict:
     if low9:
         flags.append("기준시가 1억 이하 주택(%s)은 주택 수에 넣었다 — 그 주택을 양도하면 heavy_home_count와 무관하게 중과 대상이 아니고"
                      "(영 §167의10①9호), 다른 주택을 양도하면 2주택으로 중과 대상이다" % ", ".join(low9))
-    return {"중과판정_주택수": counted, "항목별": details, "양도시_중과제외_9호": low9, "플래그": flags,
-            "주의": "비과세 판정용 주택수(count_transfer_homes)와 별개 — 같은 세대가 두 값이 다를 수 있음"}
+    out = {"중과판정_주택수": counted, "항목별": details, "양도시_중과제외_9호": low9, "플래그": flags,
+           "주의": "비과세 판정용 주택수(count_transfer_homes)와 별개 — 같은 세대가 두 값이 다를 수 있음"}
+    if pending:
+        # 누락은 저가 입증이 아니다 — 수를 확정하지 않고 무엇을 물어야 하는지 돌려준다.
+        out["중과판정_주택수"] = None
+        out["중과판정_주택수_범위"] = [counted, counted + pending]
+        out["확인필요"] = need
+        flags.insert(0, "지방 주택 %d채의 기준시가가 없어 주택 수를 확정하지 못했다(%d~%d채) — '확인필요'의 값을 받아 다시 판정한다. "
+                        "이 상태로 heavy_home_count 에 넘기지 않는다" % (pending, counted, counted + pending))
+    return out
 
 
 # ── 10. 종부세 1세대1주택자 간주 4유형 (법 §8④·영 §4의2) ──────────────────
@@ -1617,10 +1652,10 @@ def judge_jongbu_one_home_status(other_homes: list[dict], base_date: str = "") -
     없다(조심 2022서6288 등 일관 기각). 일시적 기간은 신설 시 2년 → 2023-02-28(영 33266호)
     3년. 지방저가는 신설 시 3억 → 2025-02-28(영 35352호) 4억.
     """
-    ok_all, details, flags = True, [], []
+    ok_all, details, flags, unknown, need = True, [], [], False, []
     bd = date.fromisoformat(base_date) if base_date else None
     no_new_types = bd is not None and bd < _JB_TYPES_FROM
-    for it in other_homes:
+    for idx, it in enumerate(other_homes):
         t, label = it.get("유형", "일반"), it.get("라벨") or it.get("유형", "일반")
         good, why = False, None
         if t == "부속토지":
@@ -1661,13 +1696,27 @@ def judge_jongbu_one_home_status(other_homes: list[dict], base_date: str = "") -
                    f" / 5년 미경과:{time_ok} (지분·저가 요건은 기간 무제한, 영 §4의2②)")
         elif t == "지방저가":
             cap = JB_LOW_PRICE_LIMIT if (bd is None or bd >= _JB_LOW_PRICE_4E_FROM) else JB_LOW_PRICE_LIMIT_OLD
-            good = int(it.get("공시가격", 0)) <= cap and bool(it.get("소재요건충족"))
-            why = (f"지방 저가주택 — 공시 {cap // 100_000_000}억↓ + 소재요건(비수도권 비광역시 등): "
-                   f"{'충족' if good else '미충족'} (영 §4의2③ — 4억은 2025-02-28 영 35352호부터, 종전 3억)")
+            if it.get("공시가격") in (None, "", 0) and it.get("소재요건충족"):
+                # 공시가격을 주지 않은 것은 '0원'이 아니라 '모른다'이다 — 저가 요건을 충족한 것으로 보지 않는다.
+                good = None
+                why = (f"판정 보류 — 지방 저가주택 공시가격 미입력. 과세기준일 현재 공시가격이 {cap // 100_000_000}억 이하여야 간주된다"
+                       "(영 §4의2③ — 4억은 2025-02-28 영 35352호부터, 종전 3억)")
+                need.append("other_homes[%d].공시가격" % idx)
+            else:
+                good = int(it.get("공시가격") or 0) <= cap and bool(it.get("소재요건충족"))
+                why = (f"지방 저가주택 — 공시 {cap // 100_000_000}억↓ + 소재요건(비수도권 비광역시 등): "
+                       f"{'충족' if good else '미충족'} (영 §4의2③ — 4억은 2025-02-28 영 35352호부터, 종전 3억)")
         else:
             why = "일반 주택 — 간주 유형 아님 → 1세대1주택자 탈락"
-        ok_all = ok_all and good
+        if good is None:
+            unknown = True
+        else:
+            ok_all = ok_all and good
         details.append({"항목": label, "간주인정": good, "사유": why})
+    if unknown and ok_all:
+        ok_all = None       # 다른 주택이 이미 탈락이면 False 로 확정된다 — 그때는 보류하지 않는다
+        flags.insert(0, "지방 저가주택의 공시가격이 없어 1세대1주택자 간주를 확정하지 못했다 — '확인필요'의 값을 받아 다시 판정한다. "
+                        "이 상태로 calc_jongbu_tax 에 one_home=true 를 넘기지 않는다")
     if ok_all and other_homes:
         flags.append("간주 인정돼도 그 주택 공시가는 과세표준에 합산 유지 — 12억 공제·연령/보유 세액공제만 1주택자 대우 (법 §8④ 후단)")
         flags.append("신청제: 9/16~9/30 관할세무서장 신청(최초 1회, 변동 없으면 생략 가능 — 법 §8⑤·영 §4의2④⑤)")
@@ -1675,6 +1724,7 @@ def judge_jongbu_one_home_status(other_homes: list[dict], base_date: str = "") -
     flags.append("전제: 주된 1주택은 세대원 중 1명 단독 소유(영 §2의3) — 부부 공동명의 1주택은 이 판정이 "
                  "아니라 법 §10의2 공동명의 1주택자 특례 신청(9/16~9/30) 사안(조심 2010서4078)")
     return {"1세대1주택자_간주": ok_all if other_homes else True, "항목별": details, "플래그": flags,
+            **({"확인필요": need} if need and ok_all is None else {}),
             "근거": [_cite("간주 4유형: 부속토지·일시적 2주택 3년(2023-02-28 전 2년, 2026-08-04 이후 취득분으로 종전·신규 모두 조정대상지역이면 2년)·상속(5년/지분40%/6억·3억)·"
                          "지방저가 4억(2025-02-28 전 3억) — 2~4호는 2022년 성립분부터",
                          "종부세법 §8④(18977호 부칙 §2)·영 §4의2 연혁 실측", "A")]}
@@ -3071,7 +3121,7 @@ def judge_farmland_reduction(
         try:
             conv = date.fromisoformat(zone_converted_date)
             trans = date.fromisoformat(transfer_date)
-            if (trans - conv).days > FARMLAND_ZONE_GRACE_YEARS * 365:
+            if trans > _add_years(conv, int(FARMLAND_ZONE_GRACE_YEARS)):
                 fails.append(f"주거·상업·공업지역 편입({zone_converted_date}) 후 3년 경과 — 감면 배제 (영 §66④1호). "
                              "대규모개발사업 지연·공공기관 시행 등 예외 3종 해당 여부 별도 확인")
             else:
@@ -3825,6 +3875,41 @@ def judge_business_dealer_status(
     }
 
 
+def _validated_brackets(tax_brackets) -> list[dict]:
+    """§55 세율표를 과세표준 상한순으로 정렬해 돌려준다 — 입력 순서에 세액이 좌우되지 않게 한다.
+
+    마지막(상한 없음, upto=None) 구간이 정확히 1개, 상한은 양수이고 서로 달라야 하며, 세율은 0~1,
+    누진공제는 0 이상이고 상한이 커질수록 세율·누진공제가 줄지 않아야 한다. 어긋나면 ValueError —
+    잘못된 표로 세액을 내지 않는다.
+    """
+    if not tax_brackets:
+        raise ValueError("tax_brackets(소득세법 §55 기본세율표)가 비어 있다 — 잔여 과세표준의 세액을 계산할 수 없다")
+    rows = []
+    for br in tax_brackets:
+        if not isinstance(br, dict) or "rate" not in br:
+            raise ValueError("tax_brackets 원소는 {\"upto\", \"rate\", \"deduction\"} 객체여야 한다")
+        upto = br.get("upto")
+        if upto is not None:
+            upto = int(upto)
+            if upto <= 0:
+                raise ValueError("tax_brackets 의 upto(과세표준 상한)는 양수여야 한다(마지막 구간만 null)")
+        rate, ded = float(br["rate"]), int(br.get("deduction", 0) or 0)
+        if not 0 <= rate <= 1:
+            raise ValueError("tax_brackets 의 rate 는 0~1 사이 비율이다(예: 24% → 0.24)")
+        if ded < 0:
+            raise ValueError("tax_brackets 의 deduction(누진공제)은 0 이상이어야 한다")
+        rows.append({"upto": upto, "rate": rate, "deduction": ded})
+    if sum(1 for r in rows if r["upto"] is None) != 1:
+        raise ValueError("tax_brackets 에는 상한 없는 마지막 구간(upto=null)이 정확히 1개 있어야 한다")
+    rows.sort(key=lambda r: (r["upto"] is None, r["upto"] or 0))
+    for a, b in zip(rows, rows[1:]):
+        if b["upto"] is not None and b["upto"] == a["upto"]:
+            raise ValueError("tax_brackets 에 같은 상한(upto=%d)이 두 번 있다" % a["upto"])
+        if b["rate"] < a["rate"] or b["deduction"] < a["deduction"]:
+            raise ValueError("tax_brackets 의 세율·누진공제는 과세표준 상한이 커질수록 줄지 않아야 한다 — 구간과 세율의 짝을 확인")
+    return rows
+
+
 def calc_dealer_comparative_tax(
     comprehensive_income_tax: int,
     comprehensive_tax_base: int,
@@ -3853,7 +3938,8 @@ def calc_dealer_comparative_tax(
 
     remain_base = max(0, int(comprehensive_tax_base or 0) - total_profit)
     rate_b, ded_b = 0.0, 0
-    for br in (tax_brackets or []):
+    brackets = _validated_brackets(tax_brackets)
+    for br in brackets:
         upto = br.get("upto")
         if upto is None or remain_base <= int(upto):
             rate_b, ded_b = float(br.get("rate", 0)), int(br.get("deduction", 0))

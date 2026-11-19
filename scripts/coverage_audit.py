@@ -44,8 +44,8 @@ ROOT = Path(__file__).resolve().parent.parent
 NODES_DIR = ROOT / "data" / "legal_nodes"
 CACHE_DIR = ROOT / "data" / "law_cache"
 OUT_DIR = ROOT / "data" / "coverage"
-SEARCH_URL = "http://www.law.go.kr/DRF/lawSearch.do"
-SERVICE_URL = "http://www.law.go.kr/DRF/lawService.do"
+SEARCH_URL = "https://www.law.go.kr/DRF/lawSearch.do"
+SERVICE_URL = "https://www.law.go.kr/DRF/lawService.do"
 
 sys.path.insert(0, str(ROOT / "scripts"))
 from law_watch import TRACKED_LAWS  # 추적 대상은 한 곳에서만 관리한다

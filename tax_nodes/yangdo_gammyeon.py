@@ -20,6 +20,14 @@ tax_judgment.judge_farmland_reduction · judge_farmland_daeto · judge_transfer_
 from __future__ import annotations
 
 from datetime import date
+
+
+def _add_years_cal(d: date, n: int) -> date:
+    """d 의 n년 뒤 같은 날(역법, 민법 §160) — n×365일로 세면 윤년만큼 일찍 끝난다."""
+    try:
+        return d.replace(year=d.year + n)
+    except ValueError:
+        return d.replace(year=d.year + n, day=28)
 from fractions import Fraction
 
 from tax_nodes.engine import 노드, 미적용, 세목설정
@@ -218,7 +226,7 @@ def 영제66조제4항(ctx):
         return 미적용("주거·상업·공업지역 편입·환지예정지 지정 사실 없음(또는 양도일 미입력)")
     배제 = 삼년내 = False
     if 편입 and not ctx.사실값("편입배제_예외", False):
-        if (td - date.fromisoformat(편입)).days > 3 * 365:
+        if td > _add_years_cal(date.fromisoformat(편입), 3):
             배제 = True
         else:
             삼년내 = True

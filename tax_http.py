@@ -206,7 +206,9 @@ def main():
     server = make_server()
     app = server.streamable_http_app()
     if os.environ.get("USAGE_LOG", "1") != "0":
-        app = UsageLogMiddleware(app)
+        # 등록된 도구명과 그 스키마의 인수명만 기록한다 — 임의의 도구명·키가 로그에 실리지 않게.
+        app = UsageLogMiddleware(app, tools={
+            t.name: set((t.parameters or {}).get("properties") or {}) for t in server._tool_manager.list_tools()})
     uvicorn.run(app, host=server.settings.host,
                 port=server.settings.port, access_log=False)
 

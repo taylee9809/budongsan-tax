@@ -14,7 +14,8 @@
   노드         이 케이스가 시험하는 노드 id 목록
   결론요지     판례 결론 인용(80자 이내), 쟁점 메모
 
-실행: py -3 scripts/verify_node_cases.py [파일 ...]   (인자 없으면 node_cases/ 전체)
+실행: py -3 scripts/verify_node_cases.py [--strict] [파일 ...]   (인자 없으면 node_cases/ 전체)
+  --strict  알려진_불일치 에 없는 불일치가 하나라도 있으면 종료코드 1 (CI 용). 알려진 불일치가 풀려 통과하면 목록에서 지우라고 알린다.
 마지막 줄: "[판례 회귀] N건 — 불일치 M" (bench_nodes.py 가 읽는다)
 """
 from __future__ import annotations
@@ -28,6 +29,12 @@ import traceback
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 _없음 = object()
+
+#: 판례와 노드 결론이 갈리는 것을 알고 둔 케이스 — case_id → 사유. 여기 없는 불일치는 --strict 에서 실패다.
+#: tests/test_rulings*_cases.py 의 _알려진_불일치 와 같아야 한다(tests/test_pr7_review_blockers.py 가 대조).
+알려진_불일치 = {
+    "R2103909-1": "상생임대주택 — 심판례와 예규의 결론이 갈린다(data/verification/findings.jsonl 해석 충돌 기록). 노드는 예규 쪽",
+}
 
 
 def _load_all():
@@ -93,8 +100,11 @@ def run_case(c: dict):
 
 def main(argv) -> int:
     _load_all()
+    strict = "--strict" in argv
+    argv = [a for a in argv if a != "--strict"]
     files = [pathlib.Path(a) for a in argv] or sorted((ROOT / "data" / "verification" / "node_cases").glob("*.jsonl"))
     total = bad = inactive = 0
+    new_bad, seen_known = [], set()
     for f in files:
         for i, line in enumerate(f.read_text(encoding="utf-8").splitlines(), 1):
             if not line.strip():
@@ -105,12 +115,20 @@ def main(argv) -> int:
                 continue
             total += 1
             ok, detail = run_case(c)
+            if c.get("case_id") in 알려진_불일치:
+                seen_known.add(c.get("case_id"))
+                if ok:
+                    print("FIXED %s — 알려진_불일치 에서 지울 것" % c.get("case_id"))
+            elif not ok:
+                new_bad.append(c.get("case_id"))
             if not ok:
                 bad += 1
                 print("DIFF %s (%s:%d) %s" % (c.get("case_id"), f.name, i, json.dumps(detail, ensure_ascii=False, default=str)[:600]))
     print("비활성(구법·사실판단 등) %d건" % inactive)
+    if strict and new_bad:
+        print("새 불일치 %d건(알려진_불일치 에 없음): %s" % (len(new_bad), ", ".join(map(str, new_bad))))
     print("[판례 회귀] %d건 — 불일치 %d" % (total, bad))
-    return 0
+    return 1 if (strict and new_bad) else 0
 
 
 if __name__ == "__main__":

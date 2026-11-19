@@ -399,6 +399,10 @@ def 영제167조의3제1항제1호(ctx):
         if (it.get("라벨") or it.get("종류", "주택")) in 재고 and it.get("지방소재"):
             ctx.상수근거["§167의3②3호"] = "부동산매매업자 재고주택 — 지방 3억 이하도 주택 수에 포함"
             continue
+        if it.get("지방소재") and not it.get("기준시가") and not it.get("인구감소등_12호"):
+            # 기준시가 미입력은 '0원'이 아니다 — 3억 이하를 입증하지 못했으므로 수에서 빼지 않는다(판정기 count_heavy_homes 는 보류로 돌려준다).
+            ctx.상수근거["기준시가 미입력: %s" % (it.get("라벨") or it.get("종류", "주택"))] = "지방 주택이나 기준시가가 없어 3억 이하 불산입을 적용하지 않음 — 확인 필요"
+            continue
         if it.get("지방소재") and int(it.get("기준시가", 0) or 0) <= 300_000_000 and not it.get("인구감소등_12호"):
             out.append(it.get("라벨") or it.get("종류", "주택"))
     return out
