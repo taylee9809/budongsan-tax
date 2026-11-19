@@ -1,4 +1,4 @@
-"""구 가계산 모듈(entity_tax.py)의 법인 취득세·매각세와 조문 노드(tax_nodes/chwideuk.py · beobin.py)의 격자 대조.
+"""구 가계산 모듈(entity_tax.py)의 법인 취득세·매각세와 조문 노드(tax_nodes/chwideuk.py · beopin_toji.py)의 격자 대조.
 
 entity_tax.py 는 고치지 않는다. 두 쪽이 갈라지면 여기서 드러난다 — 어느 쪽이 원문과 맞는지 확인해 findings 에 적는다.
 2026-11-17 현재 격자 전체에서 일치한다. 다만 entity_tax.corp_acq_tax 는 시행령 §28의2(저가주택 등 중과 예외)와
@@ -9,7 +9,7 @@ import itertools
 import pytest
 
 import entity_tax
-from tax_nodes.beobin import 법인_부동산양도
+from tax_nodes.beopin_toji import 법인_부동산양도
 from tax_nodes.chwideuk import 취득세_부동산
 
 취득격자 = list(itertools.product(

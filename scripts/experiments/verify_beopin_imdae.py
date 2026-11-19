@@ -5,7 +5,7 @@ import os
 import sys
 
 sys.stdout.reconfigure(encoding="utf-8")
-ROOT = os.path.join(os.path.expanduser("~"), "Documents", "korea-realestate-mcp")
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, ROOT)
 
 from tax_nodes.beopin_imdae import 법인세_임대_값 as V, 법인세_임대_판정, _모듈노드  # noqa: E402

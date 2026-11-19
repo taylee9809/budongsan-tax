@@ -7,7 +7,7 @@ import os
 import sys
 
 sys.stdout.reconfigure(encoding="utf-8")
-ROOT = os.path.join(os.path.expanduser("~"), "Documents", "korea-realestate-mcp")
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, ROOT)
 
 import tax_nodes.beopin_jasan as M  # noqa: E402
