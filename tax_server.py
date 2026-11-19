@@ -24,9 +24,9 @@ load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
 
 LAW_OC = os.environ.get("LAW_OC", "")
 
-LAW_SEARCH_URL = "http://www.law.go.kr/DRF/lawSearch.do"
+LAW_SEARCH_URL = "https://www.law.go.kr/DRF/lawSearch.do"
 
-LAW_SERVICE_URL = "http://www.law.go.kr/DRF/lawService.do"
+LAW_SERVICE_URL = "https://www.law.go.kr/DRF/lawService.do"
 
 SERVER_INSTRUCTIONS = 'Korean real estate tax engine. Computes and judges 취득세 (acquisition tax), 재산세 (property tax), 종합부동산세 (comprehensive holding tax), 양도소득세 (capital gains tax), 주택임대소득세 (rental income tax), 증여세·상속세 (gift/inheritance tax on real estate) and 재건축부담금 (reconstruction levy) under Korean law. Every result lists the statute articles applied, the articles considered but not applied (with reasons), and the provenance grade of each input. Use judge_* tools first to settle facts (household, home count, exemptions), then calc_* tools for amounts. Not tax advice; results are one reading of the statute.'
 
