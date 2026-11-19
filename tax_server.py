@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """korea-realestate 세금 판정·계산 MCP 서버 (공개판).
 
-이 파일은 scripts/extract_tax_server.py 가 server.py(비공개 통합 서버, git eee27d4)에서
+이 파일은 scripts/extract_tax_server.py 가 server.py(비공개 통합 서버, git bc95ab9)에서
 세금 도구와 그 의존 정의만 AST로 뽑아 생성한 것이다. 손으로 고치지 말고 생성기를 다시 돌린다.
 도구 43개. 법령·재결례 조회 도구는 .env의 LAW_OC(법제처 Open API 키, 무료)가 있을 때만 동작한다.
 """
@@ -657,6 +657,11 @@ def calc_property_tax(
             return {"계산불가": True, "근거": "지방세법 §111의2④ (표준세율 세액과 특례세율 세액을 같은 과세표준에서 견준다)",
                     "사유": "지방세특례제한법 경감 비교(jiteuk_relief_type)는 상수표의 세율·비율로만 한다 — 직접 지정한 %s 와 함께 쓸 수 없다"
                           % "·".join(직접)}
+        from tax_nodes.jiteuk_chwideuk import 재산세감면_모르는유형
+        모름 = 재산세감면_모르는유형(jiteuk_relief_type, year)
+        if 모름:      # 오타와 요건 미충족을 가른다(findings 292) — 어느 재산세 감면 노드도 읽지 않는 이름이다
+            return {"계산불가": True, "근거": "지방세법 §111의2④",
+                    "사유": "알 수 없는 재산세 감면유형 %s — 감면유형 이름을 확인한다(예: 주택연금담보주택·전세사기피해자)" % "·".join(map(str, 모름))}
         if official_price <= 0:
             raise ValueError("official_price는 0보다 커야 합니다")
         from tax_nodes.jaesan import 재산세_주택
@@ -1536,7 +1541,9 @@ def judge_rental_income_tax(
     tax_year는 필수 — §25①2호 2주택 간주임대료가 **2026-01-01 시행**(부칙 제19933호 §1제1호)이고
     정기예금이자율이 연례 개정 상수라 과세연도로 답이 갈린다.
     own_homes/spouse_homes 원소: {"라벨","기준시가","전용면적","공동소유","지분율","최대지분자",
-    "연임대수입","전대","국외"}. deposits 원소: {"라벨","보증금","일수","기준시가","전용면적"}.
+    "연임대수입","전대","국외","주택ID"}. deposits 원소: {"라벨","보증금","일수","기준시가","전용면적"}.
+    "주택ID"(선택): 부부가 공동소유한 같은 주택을 본인·배우자 목록에 각각 넣을 때 같은 값을 준다 — 둘 다 소유로 계산되면
+    1명의 주택으로 보아 한 번만 센다(영 §8의2③4호 단서). 주지 않으면 서로 다른 주택으로 본다.
     총수입 2천만원 초과(종합과세)는 추계경비가 국세청 고시 영역이라 '판단불가'로 정직 반환한다."""
     return _tj.judge_rental_income_tax(
         tax_year, own_homes, spouse_homes, monthly_rent_revenue, registered_rent_revenue,

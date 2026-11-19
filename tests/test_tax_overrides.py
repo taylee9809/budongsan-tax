@@ -404,6 +404,10 @@ def test_property_tax_relief_comparison_is_the_node_result():
             (dict(_JEONSE, 전용면적=59), dict(_JEONSE, 전용면적=84), {"1가구1주택": True}, None)):
         new = tax_overrides.calc_property_tax(price, 2026, prev, one, jiteuk_relief_type=kind, jiteuk_relief_facts=facts)
         old = tax_server.calc_property_tax(price, 2026, prev, one)
+        if kind == "없는유형":      # 어느 감면 노드도 읽지 않는 이름 — 계산하지 않는다(findings 292)
+            seen["비교없음"] += 1
+            assert new.get("계산불가") is True and "없는유형" in new["사유"] and "재산세 본세" not in new
+            continue
         if _K4 in new and new[_K4]["특례세율_배제"]:
             seen["지특"] += 1
             # findings 110·291 조치 뒤 — 지특법을 고르면 본세는 감면 후 금액이다(표준세율 세액은 old 이상).
