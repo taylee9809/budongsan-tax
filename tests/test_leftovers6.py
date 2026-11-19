@@ -230,3 +230,15 @@ def test_non_business_land_three_year_boundary_matches_corporate(양도일, 비�
     except (AttributeError, TypeError, ValueError):
         pytest.skip("beobin_bisaeop._도시지역 의 모양이 바뀌었다 — 법인 쪽 대조 생략")
     assert 해당 is 비사업용
+
+
+# ------------------------------------------------------------------ 9. 종부세 영 §3⑦ 임대기간 합산 겹침
+def test_rental_period_aggregation_stacks_succession_and_rebuild():
+    from datetime import date
+    from tax_nodes.jongbu_imdaegigan import 임대기간_산정
+    재 = {"멸실전_임대월수": 20, "신축후_임대월수": 16, "준공일": "2024-01-01", "임대개시일": "2024-03-01"}
+    상 = {"피상속인_임대월수": 60, "상속인_임대월수": 20}
+    월 = lambda **h: 임대기간_산정(dict({"호": "8"}, **h), 2026, date(2026, 6, 1))["임대월수"]      # noqa: E731
+    assert 월(상속임대=상) == 80 and 월(재건축멸실임대=재) == 36            # 하나만 해당 — 종전과 같음
+    assert 월(상속임대=상, 재건축멸실임대=재) == 96                          # 겹치면 쌓인다: 60 + (20 + 16)
+    assert 월(상속임대=dict(상, 상속인_임대월수=36), 재건축멸실임대=재) == 96  # 승계 후 월수에 이미 더해 넣어도 같은 답
