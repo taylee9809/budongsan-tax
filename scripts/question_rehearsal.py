@@ -412,7 +412,7 @@ async def _wait_ready(root: str) -> dict:
     async with httpx.AsyncClient(trust_env=False, timeout=10) as http:
         for _ in range(150):
             try:
-                response = await http.get(root + "/healthz")
+                response = await http.get(root + "/health")
                 if response.status_code == 200:
                     return response.json()
             except httpx.TransportError:
