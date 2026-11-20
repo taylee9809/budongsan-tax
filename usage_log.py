@@ -3,7 +3,7 @@
 POST /mcp 의 JSON-RPC tools/call 만 골라 한 줄 JSON을 stdout에 찍는다. Cloud Run은 이 줄을
 Cloud Logging의 jsonPayload로 넣으므로 별도 저장소가 필요 없다(보관 30일, 개인정보처리방침과 동일).
 
-남기는 값: tool, ok, error, ms, user, session, args
+남기는 값: tool, ok, error, ms, user, session, args, (실패 시) error_detail
 - user/session: ChatGPT가 _meta["openai/subject"]·_meta["openai/session"]로 보내는 익명 ID를
   USAGE_SALT로 한 번 더 해시(앞 16자)한 값. 원본 ID·IP·위치(_meta["openai/userLocation"])는 남기지 않는다.
 - ChatGPT 외 클라이언트(_meta 없음)는 user="-".
@@ -12,6 +12,9 @@ Cloud Logging의 jsonPayload로 넣으므로 별도 저장소가 필요 없다(�
   스키마에 있는 식별자 형태(ASCII) 이름만 통과시키고, 그 외(한글 키 등)는 버린다 — 값이 키 자리에
   잘못 실려 오는 경우까지 막기 위한 안전장치다. USAGE_SALT를 바꾸면 user/session 해시가 달라져
   같은 사람이 다른 사람으로 집계되므로 한번 정한 값은 바꾸지 않는다.
+- error_detail: 도구 실패 시 이유를 값 없이 요약한 목록. 인수 검증 실패면 "항목:오류종류"
+  (예: "article:missing", "year:int_parsing"), 도구 내부 예외면 "exception". 오류 문구 원문은
+  입력값(input_value)을 담고 있으므로 저장하지 않는다.
 """
 from __future__ import annotations
 
@@ -63,8 +66,31 @@ def _calls(body: bytes):
     return out
 
 
+_VALIDATION_RE = re.compile(r"^(\S[^\n]*)\n[ \t]+[^\n]*?\[type=([a-z_]+)", re.M)
+_TYPE_RE = re.compile(r"^[a-z_]{1,40}$")
+
+
+def _error_detail(result: dict) -> list:
+    """실패 이유를 값 없이 요약한다 — 예: ["article:missing", "year:int_parsing"].
+
+    오류 문구에는 input_value=… 로 사용자가 넣은 값이 그대로 들어 있으므로 문구를 저장하지 않는다.
+    pydantic 인수 검증 오류에서 '항목 경로'와 '오류 종류 코드'만 뽑고, 경로 조각도
+    스키마 식별자(ASCII)나 목록 순번이 아니면 '?'로 가린다. 그 밖의 실패는 종류만 남긴다.
+    """
+    texts = [c.get("text", "") for c in (result.get("content") or [])
+             if isinstance(c, dict) and isinstance(c.get("text"), str)]
+    text = "\n".join(texts)[:20000]
+    if "validation error" not in text:
+        return ["exception"] if text.startswith("Error executing tool") else ["unknown"]
+    out = []
+    for loc, kind in _VALIDATION_RE.findall(text):
+        parts = [p if (_FIELD_RE.match(p) or p.isdigit()) else "?" for p in loc.strip().split(".")]
+        out.append("%s:%s" % (".".join(parts)[:80], kind if _TYPE_RE.match(kind) else "?"))
+    return out[:10] or ["validation"]
+
+
 def _results(body: bytes) -> dict:
-    """id -> (ok, error_type). JSON 응답(json_response=True) 기준."""
+    """id -> (ok, error_type, error_detail). JSON 응답(json_response=True) 기준."""
     try:
         msg = json.loads(body)
     except (ValueError, UnicodeDecodeError):
@@ -74,11 +100,11 @@ def _results(body: bytes) -> dict:
         if not isinstance(m, dict):
             continue
         if "error" in m:
-            res[m.get("id")] = (False, "rpc_error")
+            res[m.get("id")] = (False, "rpc_error", None)
         elif isinstance(m.get("result"), dict) and m["result"].get("isError"):
-            res[m.get("id")] = (False, "tool_error")
+            res[m.get("id")] = (False, "tool_error", _error_detail(m["result"]))
         else:
-            res[m.get("id")] = (True, None)
+            res[m.get("id")] = (True, None, None)
     return res
 
 
@@ -127,10 +153,14 @@ class UsageLogMiddleware:
             ms = round((time.perf_counter() - start) * 1000)
             results = _results(b"".join(out)) if status < 400 else {}
             for rid, tool, user, session, args in calls:
-                ok, err = results.get(rid, (False, f"http_{status}") if status >= 400 else (True, None))
+                ok, err, detail = results.get(
+                    rid, (False, f"http_{status}", None) if status >= 400 else (True, None, None))
+                record = {"tool": tool, "ok": ok, "error": err, "ms": ms, "user": user, "session": session,
+                          "args": args}
+                if detail:
+                    record["error_detail"] = detail
                 try:
-                    emit({"tool": tool, "ok": ok, "error": err, "ms": ms, "user": user, "session": session,
-                          "args": args})
+                    emit(record)
                 except Exception:  # 로깅 실패가 응답을 막으면 안 된다
                     pass
 

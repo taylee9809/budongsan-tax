@@ -172,9 +172,12 @@ def lookup(article_id):
     for e in doc["entries"]:
         if _norm(e["id"]) == key:
             return e
-    m = re.search(r"§?\s*(\d+)(?:의(\d+))?", article_id)
+    # "§97의3" · "97의3" · "제97조의3" · "97조 의 3" 모두 같은 조문이다.
+    # 종전 정규식은 '조'에서 끊겨 "제97조의3"을 §97로 잘못 돌려줬다(조용한 오답).
+    m = re.search(r"(\d+)\s*조?\s*(?:의\s*(\d+))?", str(article_id))
     if m:
         want = "§%s%s" % (m.group(1), ("의" + m.group(2)) if m.group(2) else "")
+        article_id = str(article_id)
         law_hint = ("지방세특례" if "지특" in article_id or "지방세특례" in article_id
                     else "조세특례")
         decree = "시행령" in article_id or "조특령" in article_id

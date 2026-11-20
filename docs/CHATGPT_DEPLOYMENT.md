@@ -19,7 +19,7 @@ Host 검증, 도메인 확인 응답을 검사한다. `dist/chatgpt-http-check.j
 ## 호스팅
 
 Docker 사용: `Dockerfile.chatgpt`. 시작 명령: `python tax_http.py`.
-헬스 체크: `/healthz`. ChatGPT에 넣을 주소: 실제 HTTPS 도메인의 `/mcp`.
+헬스 체크: `/health`. ChatGPT에 넣을 주소: 실제 HTTPS 도메인의 `/mcp`.
 
 - `HOST=0.0.0.0`, `PORT`: 호스팅이 지정한 포트.
 - `PUBLIC_BASE_URL`: 경로 없는 실제 HTTPS 주소. Render는 `RENDER_EXTERNAL_HOSTNAME` 자동 사용.

@@ -31,7 +31,7 @@ async def check(port):
     async with httpx.AsyncClient(trust_env=False, timeout=10) as http:
         for _ in range(100):
             try:
-                response = await http.get(root + "/healthz")
+                response = await http.get(root + "/health")
                 if response.status_code == 200:
                     break
             except httpx.TransportError:
