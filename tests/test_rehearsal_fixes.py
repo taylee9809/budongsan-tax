@@ -1,0 +1,87 @@
+"""리허설·전수조사에서 나온 결함의 회귀 — findings 290(일시적 2주택 조정대상지역 미입력), 341(항 없는 조의 호 표기), 342(법인 취득세 근거 사유)."""
+import tax_judgment
+import tax_overrides
+from corporate_tax import calc_corporate_acquisition_tax
+
+
+def test_290_unknown_adjusted_area_is_pending_between_two_and_three_years():
+    f = tax_judgment.judge_temporary_two_homes
+    assert f("2020-01-01", "2026-09-01", "2028-06-01")["특례충족"] is True          # 2년 안 — 어느 쪽이든 충족
+    r = f("2020-01-01", "2026-09-01", "2029-01-15")                                # 2년~3년 사이 — 보류
+    assert r["특례충족"] is None and r["양도기한내"] is None
+    assert any("조정대상지역 여부 미입력" in x and "판정 보류" in x for x in r["플래그"])
+    assert f("2020-01-01", "2026-09-01", "2029-12-01")["특례충족"] is False         # 3년 넘김 — 어느 쪽이든 미충족
+    assert f("2020-01-01", "2026-09-01", "2029-01-15", prev_in_adjusted_area=False)["특례충족"] is True
+    assert f("2020-01-01", "2026-09-01", "2029-01-15", prev_in_adjusted_area=True, new_in_adjusted_area=True)["특례충족"] is False
+    assert f("2020-01-01", "2026-09-01", "2029-01-15", new_in_adjusted_area=True)["특례충족"] is None
+
+
+def test_290_before_2026_amendment_unchanged():
+    assert tax_judgment.judge_temporary_two_homes("2018-01-01", "2021-03-01", "2023-06-01")["특례충족"] is True
+
+
+def test_290_override_defaults_to_unknown():
+    r = tax_overrides.judge_temporary_two_homes("2020-01-01", "2026-09-01", "2029-01-15")
+    assert r["특례충족"] is None
+
+
+_LOW = dict(acquisition_price=90000000, acquire_date="2026-03-02", property_kind="주택", property_in_metro=False,
+            exclusive_area=59, standard_value=80000000, in_capital_area=True, in_redevelopment_zone=False)
+
+
+def test_341_item_label_has_space_when_no_paragraph():
+    r = calc_corporate_acquisition_tax(**_LOW)
+    labels = r["적용 조문"] + [m["표기"] for m in r["미적용 조문"]]
+    assert "농어촌특별세법 §4 11호" in labels and "농어촌특별세법 §4 9호" in labels
+    assert not any("§411호" in x or "§49호" in x for x in labels)
+
+
+def test_342_reasons_follow_corporate_judgment():
+    r = calc_corporate_acquisition_tax(**_LOW)
+    사유 = {m["표기"]: m["사유"] for m in r["미적용 조문"]}
+    assert "지방세법 시행령 §28의2" in r["적용 조문"] and "지방세법 시행령 §28의2" not in 사유
+    assert "저가주택 예외" in 사유["지방세법 §13의2①"] and "개인" not in 사유["지방세법 §13의2①"]
+    assert 사유["지방세법 §13의3"].startswith("법인 취득")
+    r = calc_corporate_acquisition_tax(acquisition_price=500000000, acquire_date="2026-03-02", property_kind="주택",
+                                       exclusive_area=59, standard_value=350000000, in_capital_area=True)
+    사유 = {m["표기"]: m["사유"] for m in r["미적용 조문"]}
+    assert r["대도시중과"] is None and 사유["지방세법 §13②"].startswith("판정 불가")
+    assert 사유["지방세법 §13의2④"].startswith("법인 취득")
+
+
+def test_340_short_term_rate_has_no_float_truncation():
+    import tax_server
+    r = tax_server.calc_transfer_tax(purchase_price=500000000, sale_price=600000000, holding_years=0.47,
+                                     necessary_expenses=5500000, year=2026, asset_type="주택")
+    assert r["양도소득세"] == 64_400_000 and r["지방소득세(10%)"] == 6_440_000 and r["총납부세액"] == 70_840_000
+
+
+def test_290_generated_tool_also_defaults_to_unknown():
+    import tax_server
+    assert tax_server.judge_temporary_two_homes("2020-01-01", "2026-09-01", "2029-01-15")["특례충족"] is None
+
+
+def test_292_unknown_property_relief_type_is_not_silently_inapplicable():
+    """없는 감면유형 이름(오타)은 '적용 대상 아님'이 아니라 판정불가·계산 거부다 — 요건 미충족과 구별한다."""
+    import tax_server
+    from tax_nodes.jaesan import 재산세_주택
+    from tax_nodes.jiteuk_chwideuk import 지특법_재산세감면, 재산세감면_모르는유형
+    assert 재산세감면_모르는유형("전세사기 피해자") == ["전세사기 피해자"]
+    for 이름 in ("전세사기피해자", "주택연금담보주택", "노동조합", "빈집정비"):      # 아는 이름(요건 미충족이어도)
+        assert 재산세감면_모르는유형(이름) == [], 이름
+    r = 지특법_재산세감면(1_000_000, 2026, "없는유형")
+    assert r["판정불가"] is True and r["감면세액"] == 0 and "전세사기피해자" in r["쓸수있는_감면유형"]
+    r = 재산세_주택(300_000_000, 2026, 0, True, 지방세특례_감면유형="전세사기 피해자")
+    사유 = [m["사유"] for m in r["미적용 조문"] if m["표기"] == "지방세법 §111의2④"][0]
+    assert 사유.startswith("알 수 없는 감면유형(전세사기 피해자)") and "판정불가" in 사유
+    t = tax_server.calc_property_tax(300_000_000, 2026, 0, True, jiteuk_relief_type="전세사기 피해자")
+    assert t["계산불가"] is True and "재산세 본세" not in t
+    # 아는 이름인데 요건 사실이 없으면 종전대로 '적용 대상이 아니다'
+    r = 재산세_주택(300_000_000, 2026, 0, True, 지방세특례_감면유형="전세사기피해자")
+    사유 = [m["사유"] for m in r["미적용 조문"] if m["표기"] == "지방세법 §111의2④"][0]
+    assert "적용 대상이 아니다" in 사유
+
+
+def test_rental_tool_documents_the_shared_home_key():
+    import tax_server
+    assert "주택ID" in tax_server.judge_rental_income_tax.__doc__

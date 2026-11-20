@@ -19,9 +19,9 @@ No warranty (AGPL §15, §16). [한국어 README](README.md).
 | | |
 |---|---|
 | MCP tools | 43 |
-| Statute nodes | 2431 (one function per article, paragraph or item) |
-| Articles pending conversion | 0 (every tax-affecting article in the corpus is a node) |
-| Regression cases / rulings / defect log | 312 / 1318 / 40 |
+| Statute nodes | 3318 (one function per article, paragraph or item) |
+| Articles pending conversion | 0 at article level (every tax-affecting article in the corpus has a node) · 1 at item level (108 of 109 sibling 호·목 without a node carry a recorded reason). 42 corpus articles fall outside this count because of title-based classification — see `docs/NODE_COVERAGE.md` |
+| Regression cases / rulings / defect log | 626 / 1383 / 120 |
 
 Verification results per tax, with mismatch counts: [`docs/BENCH.md`](docs/BENCH.md). A worked example with the statute trail: [`docs/EXAMPLE.md`](docs/EXAMPLE.md).
 

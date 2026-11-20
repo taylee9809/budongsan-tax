@@ -1,6 +1,6 @@
 # budongsan-tax
 
-> Korean real-estate tax engine and MCP server (stdio). 43 tools, 2431 statute nodes, official rulings as regression tests. Every result lists the statute articles applied and not applied. Not tax advice.
+> Korean real-estate tax engine and MCP server (stdio). 43 tools, 3318 statute nodes, official rulings as regression tests. Every result lists the statute articles applied and not applied. Not tax advice.
 
 Repository: https://github.com/taylee9809/budongsan-tax
 MCP registry name: io.github.taylee9809/budongsan-tax
@@ -18,6 +18,12 @@ License: AGPL-3.0-or-later
 - calc_jongbu_tax: Korea comprehensive real estate holding tax (종합부동산세) on housing: deductions, progressive rates, property-tax credit, age/holding credits, burden cap.
 - calc_rental_income_tax: Compute the 14% separate tax on residential rental income up to 20 million won, with registered-landlord deductions.
 - calc_dealer_comparative_tax: Comparative taxation for real estate dealers under Income Tax Act art. 64.
+- calc_corporate_property_sale_tax (hosted HTTP server only): Corporate tax when a company sells real estate — regular corporate tax on the taxable base, the additional tax on housing, non-business land and housing rights (Corporate Tax Act art. 55-2) and local corporate income tax.
+- judge_corporate_non_business_land (hosted HTTP server only): Is land sold by a company non-business land under Corporate Tax Act art. 55-2(2) — land type, holding-period test, unavoidable-cause exclusions.
+- calc_building_property_tax (hosted HTTP server only): Property tax on non-residential buildings (shops, offices, factories, golf course buildings) under Local Tax Act art. 111(1)2.
+- calc_corporate_jongbu_tax (hosted HTTP server only): Comprehensive holding tax on housing owned by a company — flat 2.7%/5%, no deduction, no burden cap.
+- calc_corporate_acquisition_tax (hosted HTTP server only): Acquisition tax for a company — 12% on housing with the low-price exception, and the large-city surcharge.
+- get_tax_scope (hosted HTTP server only): Which tool covers which tax, what no tool covers, and the acquire-hold-sell sequence for a company.
 - calc_attached_land_limit: Maximum land area attached to a home covered by the capital gains exemption, by zone (3x/5x/10x).
 - calc_gift_tax: Korea gift tax (증여세) on real estate: relationship deductions, marriage/birth deduction, prior gifts, progressive rates.
 - calc_inheritance_tax: Korea inheritance tax (상속세): basic, spouse and lump-sum deductions, progressive rates (estate basis).

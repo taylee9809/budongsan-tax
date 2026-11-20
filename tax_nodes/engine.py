@@ -102,7 +102,8 @@ class 조문:
             i = int(self.항)
             s += _항기호[i - 1] if 1 <= i <= len(_항기호) else "제%s항" % self.항
         if self.호:
-            s += "%s호" % self.호
+            # 항이 없는 조(농어촌특별세법 §4 등)는 조 번호와 호 번호가 붙어 "§411호"로 읽힌다(findings 341) — 띄운다.
+            s += ("%s호" if self.항 else " %s호") % self.호
         if self.목:
             s += "%s목" % self.목
         return s
@@ -150,10 +151,35 @@ def 참조조문() -> set[tuple]:
     return {(n.법령, n.조) for n in _등록부.values()}
 
 
+_모두올림_끝 = False
+
+
+def 모두올림() -> None:
+    """tax_nodes 의 조문 모듈을 전부 올린다(한 번만).
+
+    연결의 상당수가 ctx.값("산출이름", None) 으로 다른 모듈의 노드를 이름으로 읽는다. 그 모듈이 올라와 있지
+    않으면 기본값 None 이 조용히 돌아와 연결이 꺼진다 — 테스트와 회귀 실행기는 모든 모듈을 올려 놓고 돌아서
+    드러나지 않았고, 서버 프로세스에서는 부르는 쪽이 import 한 모듈만 올라와 있었다(findings 103·112).
+    실행기를 만들 때 한 번 전부 올려, 어느 프로세스에서든 같은 노드 집합으로 계산하게 한다.
+    올리는 순서는 결과에 영향을 주지 않는다(같은 산출의 후보는 우선순위·id 순으로 정렬된다).
+    """
+    global _모두올림_끝
+    if _모두올림_끝:
+        return
+    _모두올림_끝 = True          # 올리는 도중 다른 모듈이 실행기를 만들어도 다시 들어오지 않게 먼저 표시
+    import importlib
+    import pkgutil
+    import tax_nodes
+    for m in sorted(x.name for x in pkgutil.iter_modules(tax_nodes.__path__)):
+        if m != "engine":
+            importlib.import_module("tax_nodes." + m)
+
+
 class 실행:
     """사실 + 기준연도를 받아 노드를 수요 기반으로 풀어내는 실행기."""
 
     def __init__(self, 사실: dict, 연도: int, 기준일: str = "", 세목: str = ""):
+        모두올림()
         self.사실 = dict(사실)
         self.연도 = 연도
         self.기준일 = 기준일

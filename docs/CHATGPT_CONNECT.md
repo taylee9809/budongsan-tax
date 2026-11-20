@@ -13,7 +13,7 @@
 
 1. https://chatgpt.com/plugins 에서 `+` → **Add custom MCP server**를 선택한다.
 2. 위 값을 입력하고 표시된 연결 안내를 확인한다.
-3. **Create as a plugin**을 누르고 도구 목록을 확인한다. LAW_OC 설정 기준 43개다(법령·해석례·조례 조회 포함).
+3. **Create as a plugin**을 누르고 도구 목록을 확인한다. LAW_OC 설정 기준 52개다(법령·해석례·조례 조회 4개 포함, 없으면 48개).
 4. 생성된 플러그인을 설치한다.
 5. 새 대화에서 `@`로 **Budongsan Tax**를 선택한 다음 아래 예시를 보낸다.
 
@@ -27,6 +27,23 @@
 실제 `calc_acquisition_tax` 호출 여부와 입력값을 확인한다.
 다음에는 `plugin/review-cases.json`의 정상 5개 / 미지원·정보부족 3개 대화를 실행한다.
 실행한 도구, 입력값, 응답, 오류를 기록한다. 아직 ChatGPT 대화 실행 결과는 없다.
+
+## 대체 도구
+
+지금 대체 도구는 없다(`tax_overrides.py`의 `OVERRIDES`가 비어 있다). 2026-11-19에 아래 입력을 생성기 원본의 래퍼에 넣고 `tax_server.py`를 다시 만들어, 생성 도구가 이 입력을 직접 받는다(`estimate_reconstruction_levy`의 개발비용 항목 입력 포함, 9개 도구 33개 인자). 공개 저장소의 판정기·조문 노드에 새 입력이 생겨 생성 래퍼가 넘기지 못하게 되면 같은 이름의 고친 판을 `OVERRIDES`에 두어 호스팅 서버에서 대체한다 — `scripts/wrapper_gaps.py`와 `tests/test_tax_overrides.py`가 그 틈을 잡는다.
+
+| 도구 | 원본에 되돌려 넣은 입력 |
+|---|---|
+| `judge_transfer_reliefs` | 토지거래허가 사실(한시 배제 나목), 보유 목록으로 중과 판정 |
+| `count_heavy_homes` | 양도 주택을 지정하면 같은 목록으로 중과 대상·가산세율 판정 |
+| `judge_temporary_two_homes` | 조정대상지역 공고일(영 §155①1호 대괄호, 2026-09-30 개정) |
+| `judge_acquisition_homes_and_rate` | 종전 주택등의 조정대상지역 여부, 신규 주택 계약일·계약금 지급일(영 §28의5①, 2026-09-30 개정) |
+| `judge_155_special` | 양도일 현재 세대 주택 수 |
+| `judge_156_3_from_portfolio` | 분양권 완공 여부, 그 밖의 주택 수 직접 지정 |
+| `calc_attached_land_limit` | 멸실된 상속주택의 정착면적·양도일 |
+| `calc_property_tax` | 지방세특례제한법 경감과의 비교(지방세법 §111의2④) |
+
+`judge_jongbu_one_home_status`는 인자를 더하지 않았다 — 2026-09-30 개정의 조정대상지역 2년 판정 입력은 `other_homes` 원소의 키라 생성 도구로도 닿고, 그 키를 호스팅 설명에 적었다. 인자별 뜻과 근거 조문, 원본 래퍼에 되돌려 넣을 목록은 `docs/WRAPPER_GAPS.md`(`python scripts/wrapper_gaps.py`가 만든다)에 있다. `calc_jongbu_tax`(공제 0원·법인 거부)와 `calc_acquisition_tax`(§13의2는 주택 유상취득만)는 2026-11-18 생성기 원본에서 고쳐 다시 생성했으므로 대체하지 않는다.
 
 ## 확인된 범위
 
