@@ -97,7 +97,7 @@ def test_every_generated_wrapper_gap_is_overridden():
 
 def test_hosted_server_serves_the_overrides():
     tools = {t.name: t for t in tax_http.make_server()._tool_manager.list_tools()}
-    assert len(tools) == 48
+    assert len(tools) == 49
     for name, fn in tax_overrides.OVERRIDES.items():
         assert tools[name].fn is fn
         assert tools[name].title == SOURCE[name].title and tools[name].annotations == SOURCE[name].annotations
@@ -469,7 +469,7 @@ def test_full_stdio_entry_uses_the_hosted_assembly(monkeypatch):
 
     monkeypatch.setattr("mcp.server.fastmcp.FastMCP.run", fake_run)
     tax_full.main()
-    assert seen["transport"] == "stdio" and len(seen["tools"]) == 48
+    assert seen["transport"] == "stdio" and len(seen["tools"]) == 49
     assert all(seen["tools"][n] is fn for n, fn in tax_overrides.OVERRIDES.items())
     assert "get_tax_scope" in seen["tools"]
 

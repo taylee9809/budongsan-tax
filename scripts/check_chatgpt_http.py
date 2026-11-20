@@ -57,6 +57,8 @@ CASES = [
                            "jiteuk_relief_facts": {"전세사기피해자": True, "전세사기피해주택": True, "전용면적": 59}}),
     ("judge_jongbu_one_home_status", {"other_homes": [{"유형": "일시적신규", "신규취득일": "2026-09-01", "종전_조정대상지역": True,
                                                        "신규_조정대상지역": True}], "base_date": "2029-06-01"}),
+    ("get_tax_scenario_checklist", {"taxpayer": "법인", "assets": ["주택"], "stages": ["취득", "보유", "양도"],
+                                    "context": ["경매·공매", "단기매매"]}),
 ]
 # 대체 도구 결과에 있어야 하는 것 — (CASES 순번, 구조화 결과의 키, 기대값)
 OVERRIDE_EXPECT = [(8, "과세표준", 360000000), (9, "계산불가", True), (10, "계산불가", True), (11, "중과여부", True)]
@@ -76,7 +78,7 @@ async def check(port):
         else:
             raise RuntimeError("Server did not start")
         health = response.json()
-        assert health == {"status": "ok", "tools": 48, "law_lookup": False}, health
+        assert health == {"status": "ok", "tools": 49, "law_lookup": False}, health
         assert (await http.get(root + "/.well-known/openai-apps-challenge")).text == "synthetic-domain-check"
         invalid_host = await http.post(root + "/mcp", headers={"Host": "untrusted.invalid"}, json={})
         assert invalid_host.status_code == 421, invalid_host.text
@@ -85,9 +87,10 @@ async def check(port):
                 await client.initialize()
                 tools = (await client.list_tools()).tools
                 names = {t.name for t in tools}
-                assert len(names) == 48 and "search_law" not in names and "get_acquisition_tax_checklist" in names
+                assert len(names) == 49 and "search_law" not in names and "get_acquisition_tax_checklist" in names
                 assert {"calc_corporate_property_sale_tax", "judge_corporate_non_business_land", "calc_building_property_tax",
                         "calc_corporate_jongbu_tax", "calc_corporate_acquisition_tax", "get_tax_scope"} <= names
+                assert "get_tax_scenario_checklist" in names
                 assert all(t.annotations and t.annotations.readOnlyHint for t in tools)
                 results = []
                 for name, arguments in CASES:

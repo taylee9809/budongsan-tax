@@ -80,6 +80,7 @@ TOOL_TABLE: dict[str, tuple[str, str, str]] = {
     "format_consultation_report": ("기타", "공통", "상담 결과를 보고서 형식으로 정리(세액을 계산하지 않는다)"),
     "format_consultation_output": ("기타", "공통", "상담 결과 표준 출력 형식(세액을 계산하지 않는다)"),
     "get_tax_scope": ("기타", "공통", "이 표 — 세목별 도구와 다루지 않는 것"),
+    "get_tax_scenario_checklist": ("기타", "공통", "상황(납세자·물건·단계)별로 다뤄야 할 세목·중과·예외 목록과 근거 조문 — 판정 아님"),
 }
 
 #: 세목 표시 순서와 topic 별칭.

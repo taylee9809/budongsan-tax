@@ -19,6 +19,7 @@ from corporate_tax import (calc_corporate_acquisition_tax, calc_corporate_jongbu
 from gift_presumption import judge_gift_presumption, judge_low_price_transfer_gift
 from tax_scope import get_tax_scope
 from hosted_descriptions import DESCRIPTIONS
+from scenario_coverage import get_tax_scenario_checklist
 from policy_pages import CONTACT, PRIVACY_HTML, SUPPORT_NAME, TERMS_HTML
 from usage_log import UsageLogMiddleware
 
@@ -66,6 +67,12 @@ def make_server():
         "Do not ask for items whose condition does not apply."
     )
     instructions += (
+        " Questions that span several taxes or stages (buying through a corporation, auction or short-term flips, "
+        "repeated trading, gift then sale, a full buy-hold-sell plan) easily miss a tax. For those, call "
+        "get_tax_scenario_checklist first with the taxpayer type, assets, stages and context, and cover every item "
+        "it returns. Compute items marked 엔진 or 부분 with the tools; for items marked 범위밖, give the statute cited "
+        "and say this connector does not compute them and they need checking against the statute or with a tax "
+        "professional, instead of filling in rates or names from memory."
         " Before answering a question that spans several taxes, or any question about a company (법인) owner, call get_tax_scope "
         "(owner=\"법인\" for companies): it lists which tool computes each tax, what no tool covers, and for a company the "
         "acquire-hold-sell sequence with commonly missed taxes. "
@@ -146,6 +153,13 @@ def make_server():
                       (judge_gift_presumption, "Gift presumption test (증여 추정 판정)")):
         server.add_tool(fn, title=title, annotations=ToolAnnotations(
             title=title, readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
+
+    server.add_tool(
+        get_tax_scenario_checklist,
+        title="Tax scenario checklist",
+        annotations=ToolAnnotations(title="Tax scenario checklist", readOnlyHint=True, destructiveHint=False,
+                                    idempotentHint=True, openWorldHint=False),
+    )
 
     # Cloud Run reserves some paths ending in "z" before they reach the container.
     # Keep the public health endpoint on a non-reserved path.
