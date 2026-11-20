@@ -56,6 +56,10 @@ def _구분(ctx) -> str:
     산출=("재산세_토지_공정시장가액비율",),
 )
 def 영제109조제1항제1호(ctx):
+    if ctx.사실값("물건유형") == "건축물":      # 건축물분 재산세(tax_nodes/jaesan_geonchuk.py) — 2층 상수표에서 연도로 읽는다
+        import tax_params
+        ctx.상수근거["공정시장가액비율"] = tax_params.cite("재산세.건축물.공정시장가액비율", ctx.연도)
+        return tax_params.get_param("재산세.건축물.공정시장가액비율", ctx.연도)
     ctx.상수근거["재산세 토지 공정시장가액비율"] = "지방세법 시행령 §109①1호 — 70% (2026-07-01 시행본)"
     return 0.70
 

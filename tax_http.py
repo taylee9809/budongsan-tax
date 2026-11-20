@@ -10,8 +10,14 @@ from mcp.types import ToolAnnotations
 
 from starlette.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 
+import tax_overrides
 import tax_server
 from acquisition_checklist import get_acquisition_tax_checklist
+from building_property_tax import calc_building_property_tax
+from corporate_tax import (calc_corporate_acquisition_tax, calc_corporate_jongbu_tax,
+                           calc_corporate_property_sale_tax, judge_corporate_non_business_land)
+from gift_presumption import judge_gift_presumption, judge_low_price_transfer_gift
+from tax_scope import get_tax_scope
 from hosted_descriptions import DESCRIPTIONS
 from policy_pages import CONTACT, PRIVACY_HTML, SUPPORT_NAME, TERMS_HTML
 from usage_log import UsageLogMiddleware
@@ -39,6 +45,8 @@ def make_server():
     # Directory review: descriptions say what a tool does, never which tool to call next.
     enabled = [t.model_copy(update={"description": DESCRIPTIONS[t.name]}) if t.name in DESCRIPTIONS else t
                for t in enabled]
+    # 생성 래퍼가 넘기지 못하는 입력이 생기면 같은 이름의 고친 판으로 대체한다 — 목록은 tax_overrides.OVERRIDES(지금은 비어 있다).
+    enabled = tax_overrides.replace_tools(enabled, DESCRIPTIONS)
     instructions = tax_server.SERVER_INSTRUCTIONS + (
         " Ask for missing material facts, including transaction date, household home count, "
         "area and relief conditions; never treat omitted values as confirmed zero or false. "
@@ -57,6 +65,38 @@ def make_server():
         "then ask only for the missing items, in everyday language, a few at a time, saying briefly why each matters. "
         "Do not ask for items whose condition does not apply."
     )
+    instructions += (
+        " Before answering a question that spans several taxes, or any question about a company (법인) owner, call get_tax_scope "
+        "(owner=\"법인\" for companies): it lists which tool computes each tax, what no tool covers, and for a company the "
+        "acquire-hold-sell sequence with commonly missed taxes. "
+        "For a company, do not use calc_jongbu_tax, calc_acquisition_tax or calc_transfer_tax: use calc_corporate_jongbu_tax "
+        "(housing owned on June 1: flat 2.7%/5%, no deduction, no burden cap — 종합부동산세법 §9②), "
+        "calc_corporate_acquisition_tax (12% on housing with the low-price exception, and the large-city surcharge 지방세법 §13②) "
+        "and calc_corporate_property_sale_tax (corporate tax on the taxable base, the additional tax on gains from housing, "
+        "non-business land and housing rights under 법인세법 §55의2, and local corporate income tax; it does not compute the taxable base itself). "
+        "judge_corporate_non_business_land judges whether land sold by a company is non-business land (법인세법 §55의2②) "
+        "and returns no verdict when facts are missing. "
+        "calc_building_property_tax computes property tax on non-residential buildings (상가·공장 등, 지방세법 §111①2호). "
+        "A company that holds property on June 1 owes that year's property tax and holding tax even if it sells soon after. "
+        "For anything get_tax_scope lists as not covered (주민세, 부가가치세, 배당 과세 and so on), say this server does not cover it "
+        "and give no rates, amounts or article numbers from memory. "
+        "Cite only statute articles that a tool result returned."
+    )
+    # 질문 리허설(docs/QUESTION_REHEARSAL.md)에서 나온 처방 a1~a4.
+    instructions += (
+        " Rates and article numbers written in these instructions or in tool descriptions are there to help you pick a tool. "
+        "Before a tool result has returned them, do not state them to the user as the applicable rate; say which tax applies "
+        "and that you will compute it. A get_tax_scope result counts as a tool result. "
+        "If the user gave an amount but not the other inputs a calc_* tool needs (date, year, age, holding period, home count, ownership), "
+        "ask for them first. Never fill a date argument with today's date or the current year on your own. "
+        "If you still compute to show an order of magnitude, call it provisional in the first sentence and list every input you assumed. "
+        "When comparing an individual with a company (개인 vs 법인), show each side's computed taxes stage by stage, but do not open with "
+        "or conclude which side is cheaper overall: tax on taking money out of the company (배당·급여), VAT and social insurance are not "
+        "computed here and can reverse the result. Say that in the same sentence as any total. "
+        "Do not derive a tool input from your own tax arithmetic (for example 근로소득금액 from an annual salary). "
+        "Ask the user for the figure, or call the tool without it and say which part was left out. "
+        "A judge_* result of None (보류·판정불가) means a fact is missing: ask for it instead of picking a side."
+    )
     server = FastMCP(
         "budongsan-tax", instructions=instructions, tools=enabled,
         host=os.environ.get("HOST", "127.0.0.1"),
@@ -72,6 +112,40 @@ def make_server():
         annotations=ToolAnnotations(title="Acquisition tax checklist", readOnlyHint=True, destructiveHint=False,
                                     idempotentHint=True, openWorldHint=False),
     )
+
+    # 법인의 부동산 양도 — 조문 노드(tax_nodes/beopin_toji.py 등)로 계산한다. 외부 조회 없음.
+    server.add_tool(
+        calc_corporate_property_sale_tax,
+        title="Corporate tax on a property sale (법인세)",
+        annotations=ToolAnnotations(title="Corporate tax on a property sale (법인세)", readOnlyHint=True,
+                                    destructiveHint=False, idempotentHint=True, openWorldHint=False),
+    )
+
+    server.add_tool(
+        judge_corporate_non_business_land,
+        title="Corporate non-business land test (법인 비사업용 토지)",
+        annotations=ToolAnnotations(title="Corporate non-business land test (법인 비사업용 토지)", readOnlyHint=True,
+                                    destructiveHint=False, idempotentHint=True, openWorldHint=False),
+    )
+    # 법인 종부세·법인 취득세 — 개인용 calc_jongbu_tax·calc_acquisition_tax 는 법인을 계산하지 않는다(findings 95·97·98).
+    for fn, title in ((calc_corporate_jongbu_tax, "Corporate holding tax on housing (법인 종부세)"),
+                      (calc_corporate_acquisition_tax, "Corporate acquisition tax (법인 취득세)"),
+                      (get_tax_scope, "Tax scope and tool map (범위 안내)")):
+        server.add_tool(fn, title=title, annotations=ToolAnnotations(
+            title=title, readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
+    # 건축물(상가·공장 등) 재산세 — 조문 노드(tax_nodes/jaesan_geonchuk.py)로 계산한다.
+    server.add_tool(
+        calc_building_property_tax,
+        title="Property tax on a building (건축물 재산세)",
+        annotations=ToolAnnotations(title="Property tax on a building (건축물 재산세)", readOnlyHint=True,
+                                    destructiveHint=False, idempotentHint=True, openWorldHint=False),
+    )
+
+    # 증여 예시·추정 — 저가 양수·고가 양도(상증법 §35), 증여 추정(§44·§45). 조문 노드(tax_nodes/sangjeung_chujeong.py)로 판정한다.
+    for fn, title in ((judge_low_price_transfer_gift, "Below-market sale gift (저가 양수·고가 양도 증여이익)"),
+                      (judge_gift_presumption, "Gift presumption test (증여 추정 판정)")):
+        server.add_tool(fn, title=title, annotations=ToolAnnotations(
+            title=title, readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 
     # Cloud Run reserves some paths ending in "z" before they reach the container.
     # Keep the public health endpoint on a non-reserved path.
@@ -134,7 +208,9 @@ def main():
     server = make_server()
     app = server.streamable_http_app()
     if os.environ.get("USAGE_LOG", "1") != "0":
-        app = UsageLogMiddleware(app)
+        # 등록된 도구명과 그 스키마의 인수명만 기록한다 — 임의의 도구명·키가 로그에 실리지 않게.
+        app = UsageLogMiddleware(app, tools={
+            t.name: set((t.parameters or {}).get("properties") or {}) for t in server._tool_manager.list_tools()})
     uvicorn.run(app, host=server.settings.host,
                 port=server.settings.port, access_log=False)
 

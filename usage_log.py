@@ -12,6 +12,11 @@ Cloud Logging의 jsonPayload로 넣으므로 별도 저장소가 필요 없다(�
   스키마에 있는 식별자 형태(ASCII) 이름만 통과시키고, 그 외(한글 키 등)는 버린다 — 값이 키 자리에
   잘못 실려 오는 경우까지 막기 위한 안전장치다. USAGE_SALT를 바꾸면 user/session 해시가 달라져
   같은 사람이 다른 사람으로 집계되므로 한번 정한 값은 바꾸지 않는다.
+  미들웨어에 도구 표(tools={도구명: 인수명 집합})를 주면 등록된 도구명과 그 도구 스키마의 인수명만 남긴다 —
+  등록되지 않은 도구명은 "(unknown)"으로 바꾸고 인수는 남기지 않는다(임의의 문자열이 로그에 실리지 않게).
+- 본문은 읽는 도중에 크기를 잰다. _MAX_BODY(1MB)를 넘으면 더 읽지 않고 413 으로 끊는다 — 큰 요청을 통째로
+  메모리에 올리지 않는다. Content-Length 가 한도를 넘으면 본문을 읽기 전에 끊는다.
+- JSON-RPC 모양이 아닌 요청(params 가 객체가 아님 등)은 기록하지 않고 그대로 넘긴다 — 입력 검증은 MCP 서버의 몫이다.
 - error_detail: 도구 실패 시 이유를 값 없이 요약한 목록. 인수 검증 실패면 "항목:오류종류"
   (예: "article:missing", "year:int_parsing"), 도구 내부 예외면 "exception". 오류 문구 원문은
   입력값(input_value)을 담고 있으므로 저장하지 않는다.
@@ -49,20 +54,37 @@ def _fields(arguments) -> list:
     return sorted(names)[:_MAX_FIELDS]
 
 
-def _calls(body: bytes):
+def _calls(body: bytes, tools: dict | None = None):
+    """tools/call 만 골라 (id, 도구명, user, session, 인수명) 목록으로. 모양이 어긋난 요청은 건너뛴다(예외를 내지 않는다).
+
+    tools 가 있으면 등록된 도구명과 그 도구 스키마의 인수명만 남긴다.
+    """
     try:
         msg = json.loads(body)
-    except (ValueError, UnicodeDecodeError):
+    except (ValueError, UnicodeDecodeError, RecursionError):
         return []
     msgs = msg if isinstance(msg, list) else [msg]
     out = []
     for m in msgs:
-        if isinstance(m, dict) and m.get("method") == "tools/call":
-            p = m.get("params") or {}
-            meta = p.get("_meta") or {}
-            out.append((m.get("id"), str(p.get("name", "?"))[:64],
-                        _h(meta.get("openai/subject")), _h(meta.get("openai/session")),
-                        _fields(p.get("arguments"))))
+        if not (isinstance(m, dict) and m.get("method") == "tools/call"):
+            continue
+        p = m.get("params")
+        if not isinstance(p, dict):
+            continue        # params 가 객체가 아니면 기록하지 않는다 — 오류 응답은 MCP 서버가 낸다
+        meta = p.get("_meta")
+        meta = meta if isinstance(meta, dict) else {}
+        name, args = p.get("name"), _fields(p.get("arguments"))
+        if tools is not None:
+            if isinstance(name, str) and name in tools:
+                args = [a for a in args if a in tools[name]]
+            else:
+                name, args = "(unknown)", []
+        elif not (isinstance(name, str) and _FIELD_RE.match(name)):
+            name = "?"
+        rid = m.get("id")
+        if not isinstance(rid, (str, int)) or isinstance(rid, bool):
+            rid = None
+        out.append((rid, name[:64], _h(meta.get("openai/subject")), _h(meta.get("openai/session")), args))
     return out
 
 
@@ -114,25 +136,51 @@ def emit(record: dict) -> None:
     sys.stdout.flush()
 
 
+async def _too_large(send):
+    body = b'{"error":"request body too large"}'
+    await send({"type": "http.response.start", "status": 413,
+                "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(body)).encode()),
+                            (b"connection", b"close")]})
+    await send({"type": "http.response.body", "body": body})
+
+
 class UsageLogMiddleware:
-    def __init__(self, app, path: str = "/mcp"):
+    def __init__(self, app, path: str = "/mcp", tools: dict | None = None, max_body: int | None = None):
+        """tools: {도구명: 인수명 집합} — 주면 등록된 도구명·스키마 인수명만 기록한다. max_body: 본문 한도(기본 _MAX_BODY)."""
         self.app = app
         self.path = path
+        self.tools = None if tools is None else {k: frozenset(v) for k, v in tools.items()}
+        self.max_body = _MAX_BODY if max_body is None else max_body
 
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http" or scope.get("method") != "POST" or scope.get("path", "").rstrip("/") != self.path:
             return await self.app(scope, receive, send)
 
+        # 본문 크기는 읽기 전(Content-Length)과 읽는 도중에 잰다 — 한도를 넘는 요청은 메모리에 올리지 않고 끊는다.
+        for k, v in scope.get("headers") or []:
+            if k.lower() == b"content-length":
+                try:
+                    if int(v) > self.max_body:
+                        return await _too_large(send)
+                except ValueError:
+                    pass
         # 요청 본문을 모아 두었다가 그대로 다시 흘려보낸다.
-        chunks, more = [], True
+        chunks, size, more = [], 0, True
         while more:
             message = await receive()
             if message["type"] != "http.request":
                 break
-            chunks.append(message.get("body", b""))
+            chunk = message.get("body", b"")
+            size += len(chunk)
+            if size > self.max_body:
+                return await _too_large(send)
+            chunks.append(chunk)
             more = message.get("more_body", False)
         body = b"".join(chunks)
-        calls = _calls(body) if len(body) <= _MAX_BODY else []
+        try:
+            calls = _calls(body, self.tools)
+        except Exception:  # 로깅 때문에 요청이 실패하면 안 된다 — 기록 없이 그대로 넘긴다
+            calls = []
         if not calls:
             return await self.app(scope, _replay(body, receive), send)
 
