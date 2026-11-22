@@ -443,38 +443,40 @@ def judge_acquisition_rate(counted_homes_including_new: int, in_adjusted_area: b
 
 
 
-def _acq_senior_housing_result(counting: dict, is_gift: bool) -> dict:
-    """취득하는 것이 노인복지주택(준주택, 대장 용도 노유자시설)일 때 — 주택 세율·중과 트랙 밖, 일반 건축물 세율.
+def _acq_quasi_housing_result(counting: dict, quasi: dict, is_gift: bool, in_adjusted_area: bool,
+                              acquire_date: str | None, gift_std_value: int, exclusive_area_m2: float | None) -> dict:
+    """취득하는 것이 준주택(노인복지주택 — 주택법-2-1 노드가 '주택 아님'으로 낸 것)일 때의 세율 판정.
 
-    유상 4%(§11①7호나목) · 무상 3.5%(§11①2호). 지방교육세 (표준세율−2%)×20%(§151①1호가목), 농특세 2% 치환 세액×10%(농특세법 §5①6호).
-    근거와 반대 해석은 tax_nodes.chwideuk_jutaeksu 의 노인복지주택_근거·노인복지주택_반대해석에 있다.
+    세율은 이 함수가 정하지 않는다 — 취득세 실행 노드(tax_nodes.chwideuk.취득세_부동산)를 그대로 돌려 표준세율·적용세율·
+    지방교육세율·농특세율을 읽는다. 준주택이면 chwideuk._원인()이 §11①8호 대신 7호나목으로 돌리고 §13의2①·②와
+    농특세법 §4 11호(서민주택)가 미적용이 된다. 과세표준은 세율 산출용 1억(세율은 가액과 무관한 구간이다).
     """
-    from tax_nodes.chwideuk_jutaeksu import 노인복지주택_근거, 노인복지주택_반대해석
-    rate = 0.035 if is_gift else 0.04
-    rate_basis = "지방세법 §11①2호(무상취득 3.5%)" if is_gift else "지방세법 §11①7호나목(그 밖의 유상취득 4%)"
+    from tax_nodes.chwideuk import 취득세_부동산
+    year = int(acquire_date[:4]) if acquire_date else date.today().year
+    facts = {"종류": quasi["종류"], "조정대상지역": bool(in_adjusted_area), "전용면적": exclusive_area_m2}
+    if is_gift:
+        facts["무상취득_시가표준액"] = gift_std_value or None
+    base = 100_000_000
+    r = 취득세_부동산(base, year, "무상" if is_gift else "주택유상", acquire_date or "", **facts)
+    rate = r["적용세율(표준+중과+조례)"]
+    edu, rural = round(r["지방교육세"] / base, 6), round(r["농어촌특별세"] / base, 6)
+    heavy = bool(r["세율 내역"].get("중과유형"))
     rate_out = {
-        "판정": f"노인복지주택 — 주택이 아니어서 일반 건축물 세율 {rate:.1%} (중과 없음)",
-        "취득세율": rate,
-        "중과여부": False,
-        "지방교육세율(과표대비)": round((rate - 0.02) * 0.2, 4),
-        "농특세율(과표대비)": 0.002,
-        "농특세비고": "주택이 아니어서 전용 85㎡ 이하 서민주택 비과세(농특세법 §4 11호)를 적용하지 않았다",
-        "근거": [
-            _cite(노인복지주택_근거, "주택법 §2제4호·영 §4제3호, 지방세법 §11①8호·§13의2①·§13의3, 조심 2026지0865", "B"),
-            _cite(f"주택 아닌 부동산 취득 {rate:.1%}", rate_basis, "A"),
-            _cite("지방교육세 (표준세율−2%)×20%", "지방세법 §151①1호가목", "A"),
-            _cite("농특세 = 표준세율 2% 치환 세액의 10% = 과표의 0.2%", "농특세법 §5①6호", "A"),
-        ],
-        "플래그": [
-            노인복지주택_반대해석,
-            "주택으로 과세되면 유상 1~3%(세대 주택 수에 따라 8·12% 중과)로 바뀐다 — 무주택·1주택 세대는 주택 판정 쪽이 세금이 적다",
-            "재산세는 현황과세라 실제 주거용이면 주택분으로 과세될 수 있다(조심 2022지0055 기각) — 취득세 판정과 별개",
-            "건축물대장 용도가 노유자시설(노인복지주택)인지 확인할 것 — 대장에 주택으로 기재되어 있으면 '종류': '주택'으로 넣는다",
-        ],
+        "판정": "%s — 주택이 아니어서 %s %.1f%%%s" % (quasi["종류"], r["표준세율_호"], rate * 100, " (중과)" if heavy else " (중과 없음)"),
+        "취득세율": rate, "중과여부": heavy,
+        "지방교육세율(과표대비)": edu, "농특세율(과표대비)": rural,
+        "농특세비고": "주택이 아니어서 서민주택 비과세(농특세법 §4 11호)가 적용되지 않는다",
+        "근거": [_cite(quasi["사유"], " · ".join(quasi["근거"]), "B"),
+               _cite("세율·부가세율 = 취득세 실행 노드 결과 (%s)" % r["세율근거"], "지방세법 §11①·§13의2·§151①1호, 농특세법 §5①6호 (tax_nodes.chwideuk)", "A")],
+        "플래그": [quasi["해석메모"],
+                 "주택으로 과세되면 유상 1~3%(세대 주택 수에 따라 8·12% 중과)로 바뀐다 — 무주택·1주택 세대는 주택 판정 쪽이 세금이 적다",
+                 "재산세는 현황과세라 실거주면 주택분으로 과세될 수 있다(조심 2022지0055 기각) — 취득세 판정과 별개",
+                 "건축물대장 용도가 노유자시설(노인복지주택)인지 확인할 것 — 대장에 주택으로 기재되어 있으면 '종류': '주택'으로 넣는다"],
+        "노드결과": {k: r[k] for k in ("표준세율", "표준세율_호", "세율근거", "세율 내역")},
     }
     return {"산입_주택수": counting["산입_주택수"],
-            "취득세율": rate, "중과여부": False, "판정": rate_out["판정"],
-            "농특세율(과표대비)": 0.002,
+            "취득세율": rate, "중과여부": heavy, "판정": rate_out["판정"],
+            "농특세율(과표대비)": rural,
             "일시적2주택": None, "저가주택_중과예외": None, "중과예외_호": None, "취득주택_저가판정": None,
             "플래그": list(rate_out["플래그"]),
             "주택수_산정": counting, "세율_판정": rate_out, "일시적2주택_판정": None}
@@ -511,8 +513,12 @@ def judge_acquisition_homes_and_rate(
     """
     target, how = _acq_target_home(homes)
     counting = count_acquisition_homes(homes, acquire_date, target=target)
-    if target is not None and target.get("종류") == "노인복지주택":
-        return _acq_senior_housing_result(counting, is_gift)
+    if target is not None:
+        from tax_nodes.jutaek_jeongui import 주택여부
+        quasi = 주택여부(target, int(acquire_date[:4]) if acquire_date else None)
+        if quasi:      # 준주택(노인복지주택) — 주택 세율·중과 트랙 밖. 세율은 취득세 실행 노드가 낸다
+            return _acq_quasi_housing_result(counting, quasi, is_gift, in_adjusted_area, acquire_date,
+                                             gift_std_value, exclusive_area_m2)
     # 취득 주택이 영 §28의2 각 호(1호 저가주택, "중과예외호"로 준 2~18호)에 해당하면 법인·주택 수와 무관하게 §13의2① 중과 대상이 아니다.
     # 무상취득(§13의2②)은 이 예외와 무관하다 — 판정하지 않는다.
     low = None if is_gift else _acq_target_exception(homes, acquire_date, target, how, is_corporation)

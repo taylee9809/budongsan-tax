@@ -122,6 +122,7 @@ def _load_nodes():
     import tax_nodes.yangdo_jungkwa_ho  # noqa: F401
     import tax_nodes.yangdo_jeongui_ho  # noqa: F401
     import tax_nodes.chwideuk_jutaeksu  # noqa: F401
+    import tax_nodes.jutaek_jeongui  # noqa: F401
     import tax_nodes.nongteuk  # noqa: F401
     import tax_nodes.jongbu_imdaegigan  # noqa: F401
     import tax_nodes.jiteuk_jeongui  # noqa: F401
